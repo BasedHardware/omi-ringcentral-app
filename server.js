@@ -378,7 +378,7 @@ app.post('/logout', async (req, res) => {
     }
 });
 
-// Webhook endpoint - receives OMI transcripts
+// Webhook endpoint - receives OMI transcripts (v2 - detailed logging)
 app.post('/webhook', async (req, res) => {
     console.log('📥 WEBHOOK RECEIVED:', {
         query: req.query,
