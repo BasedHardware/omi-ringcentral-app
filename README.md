@@ -7,6 +7,7 @@ Voice-activated RingCentral messaging and task creation through your OMI device.
 - **🎤 Voice-Activated** - Say "Send ring message" or "Create ring task" and speak naturally
 - **🧠 AI-Powered Chat Matching** - AI intelligently matches spoken names to your workspace chats
 - **📋 Task Creation** - Create and assign tasks with voice commands, including due dates and times
+- **📲 Mobile Notifications** - Instant push notifications to your OMI app when actions complete
 - **🔐 OAuth Authentication** - Secure RingCentral OAuth 2.0 integration
 - **💬 Direct Messages** - Works with DMs, channels, and group chats
 - **⚙️ Flexible Settings** - Change settings anytime from mobile-first homepage
@@ -124,7 +125,15 @@ OPENAI_API_KEY=your_openai_key
 # App Settings
 PORT=3000
 SESSION_SECRET=your-secret-key-change-this-in-production
+
+# OMI API Credentials (for sending mobile notifications)
+OMI_APP_ID=your_omi_app_id_here
+OMI_APP_SECRET=your_omi_app_secret_here
 ```
+
+**Get OMI Credentials:**
+- `OMI_APP_ID` and `OMI_APP_SECRET` are provided when you create your app in the OMI Developer Portal
+- These enable push notifications to the user's mobile device
 
 ### RingCentral App Setup
 

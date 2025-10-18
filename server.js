@@ -22,6 +22,55 @@ const rcsdk = new RingCentral({
 // Initialize Message Detector
 const messageDetector = new MessageDetector(process.env.OPENAI_API_KEY);
 
+// Helper function to send OMI notification to user's mobile app
+async function sendOmiNotification(userId, message) {
+    const appId = process.env.OMI_APP_ID;
+    const appSecret = process.env.OMI_APP_SECRET;
+
+    if (!appId || !appSecret) {
+        console.log('⚠️  OMI credentials not configured, skipping notification');
+        return null;
+    }
+
+    const https = require('https');
+    
+    const options = {
+        hostname: 'api.omi.me',
+        path: `/v2/integrations/${appId}/notification?uid=${encodeURIComponent(userId)}&message=${encodeURIComponent(message)}`,
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${appSecret}`,
+            'Content-Type': 'application/json',
+            'Content-Length': 0
+        }
+    };
+
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    console.log(`📲 OMI notification sent to user ${userId.substring(0, 10)}...`);
+                    try {
+                        resolve(data ? JSON.parse(data) : {});
+                    } catch (e) {
+                        resolve({ raw: data });
+                    }
+                } else {
+                    console.error(`❌ OMI notification failed (${res.statusCode}): ${data}`);
+                    reject(new Error(`API Error (${res.statusCode}): ${data}`));
+                }
+            });
+        });
+        req.on('error', (error) => {
+            console.error(`❌ OMI notification error: ${error.message}`);
+            reject(error);
+        });
+        req.end();
+    });
+}
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -191,6 +240,15 @@ function startTimeoutMonitor() {
                                         const userSettings = SimpleUserStorage.getUserSettings(uid);
                                         await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime, userSettings.timezone);
                                         console.log(`⏰ SUCCESS! Task created via timeout: ${title}`);
+                                        
+                                        // Send OMI notification to user's mobile app
+                                        const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
+                                        const notificationMsg = `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                                        try {
+                                            await sendOmiNotification(uid, notificationMsg);
+                                        } catch (notifError) {
+                                            console.log(`⚠️  Notification failed but task was created: ${notifError.message}`);
+                                        }
                                     } catch (error) {
                                         console.error(`⏰ Failed to create task: ${error.message}`);
                                     }
@@ -225,6 +283,14 @@ function startTimeoutMonitor() {
                                     );
                                     
                                     console.log(`⏰ SUCCESS! Timeout message sent to ${chatName}`);
+                                    
+                                    // Send OMI notification to user's mobile app
+                                    const notificationMsg = `✅ Message sent to ${chatName}: ${message}`;
+                                    try {
+                                        await sendOmiNotification(uid, notificationMsg);
+                                    } catch (notifError) {
+                                        console.log(`⚠️  Notification failed but message was sent: ${notifError.message}`);
+                                    }
                                 } else {
                                     console.log(`⏰ Insufficient content to send (message: '${message ? message.substring(0, 50) : 'None'}...')`);
                                 }
@@ -735,7 +801,16 @@ async function processSegments(session, segments, user) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
                     const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
-                    return `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                    const notificationMsg = `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but task was created: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
                 } catch (error) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.error(`❌ FAILED: ${error.message}`);
@@ -778,7 +853,17 @@ async function processSegments(session, segments, user) {
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
-                    return `✅ Message sent to ${chatName}: ${message}`;
+                    const notificationMsg = `✅ Message sent to ${chatName}: ${message}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    const uid = session.uid;
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but message was sent: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
                 } catch (error) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.error(`❌ FAILED: ${error.message}`);
@@ -856,7 +941,16 @@ async function processSegments(session, segments, user) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
                     const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
-                    return `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                    const notificationMsg = `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but task was created: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
                 } catch (error) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.error(`❌ FAILED: ${error.message}`);
@@ -895,7 +989,17 @@ async function processSegments(session, segments, user) {
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
-                    return `✅ Message sent to ${chatName}: ${message}`;
+                    const notificationMsg = `✅ Message sent to ${chatName}: ${message}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    const uid = session.uid;
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but message was sent: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
                 } catch (error) {
                     SimpleSessionStorage.resetSession(sessionId);
                     console.error(`❌ FAILED: ${error.message}`);
