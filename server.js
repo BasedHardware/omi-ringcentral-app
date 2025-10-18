@@ -415,16 +415,8 @@ app.get('/', async (req, res) => {
     const { uid } = req.query;
     
     if (!uid) {
-        return res.json({
-            app: "OMI RingCentral Integration",
-            version: "1.0.0",
-            status: "active",
-            endpoints: {
-                auth: "/auth?uid=<user_id>",
-                webhook: "/webhook?session_id=<session>&uid=<user_id>",
-                setup_check: "/setup-completed?uid=<user_id>"
-            }
-        });
+        // Show a simple landing page with instructions
+        return res.send(getLandingPageHTML());
     }
     
     const user = SimpleUserStorage.getUser(uid);
@@ -436,6 +428,25 @@ app.get('/', async (req, res) => {
     }
     
     // Authenticated - show settings page
+    const chats = user.available_chats || [];
+    return res.send(getAuthenticatedHTML(uid, chats));
+});
+
+// Settings endpoint (same as root for now)
+app.get('/settings', async (req, res) => {
+    const { uid } = req.query;
+    
+    if (!uid) {
+        return res.send(getLandingPageHTML());
+    }
+    
+    const user = SimpleUserStorage.getUser(uid);
+    
+    if (!user || !user.tokens) {
+        const authUrl = `/auth?uid=${uid}`;
+        return res.send(getNotAuthenticatedHTML(authUrl, uid));
+    }
+    
     const chats = user.available_chats || [];
     return res.send(getAuthenticatedHTML(uid, chats));
 });
@@ -1028,6 +1039,63 @@ app.get('/webhook', (req, res) => {
 });
 
 // HTML templates
+function getLandingPageHTML() {
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RingCentral Voice Integration</title>
+    <style>${getModernCSS()}</style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1>🔊 Ring Voice</h1>
+                <p class="subtitle">Voice-powered RingCentral messaging & tasks</p>
+            </div>
+        </header>
+
+        <div class="settings-card">
+            <h2>ℹ️ How to Access Settings</h2>
+            <p style="margin-bottom: 20px; color: #6b7280;">
+                This app is designed to work with the OMI mobile app. To access your settings and manage your integration:
+            </p>
+            
+            <div class="examples" style="margin-bottom: 24px;">
+                <div class="example-item">
+                    <span class="example-label">From OMI App:</span>
+                    <code>Open the RingCentral integration in your OMI app → Settings</code>
+                </div>
+                <div class="example-item">
+                    <span class="example-label">Direct URL:</span>
+                    <code>https://omi-ringcentral.up.railway.app/?uid=YOUR_USER_ID</code>
+                </div>
+            </div>
+
+            <h3 style="font-size: 18px; margin-bottom: 12px; color: #374151;">✨ Features</h3>
+            <ul style="color: #6b7280; line-height: 2;">
+                <li>💬 Send messages to any RingCentral chat with your voice</li>
+                <li>📋 Create tasks with smart assignee matching</li>
+                <li>⏰ Set timezone for accurate task due dates</li>
+                <li>🎤 Natural voice commands powered by AI</li>
+            </ul>
+
+            <div style="margin-top: 24px; padding: 16px; background: #fef3c7; border-radius: 8px; border: 1px solid #fbbf24;">
+                <strong style="color: #92400e;">💡 Tip:</strong>
+                <p style="color: #78350f; margin-top: 8px; font-size: 14px;">
+                    Get your User ID (uid) from the OMI mobile app when you set up this integration.
+                    The homepage with settings will load automatically when you access via OMI.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+}
+
 function getNotAuthenticatedHTML(authUrl, uid) {
     return `
 <!DOCTYPE html>

@@ -73,9 +73,14 @@ Message: "Hello team, hope everyone is having a great day."
 | Field | Value |
 |-------|-------|
 | **Webhook URL** | `https://your-app.up.railway.app/webhook` |
-| **App Home URL** | `https://your-app.up.railway.app/` |
+| **App Home URL** | `https://your-app.up.railway.app/` ← **Settings are here!** |
 | **Auth URL** | `https://your-app.up.railway.app/auth` |
 | **Setup Completed URL** | `https://your-app.up.railway.app/setup-completed` |
+
+**Accessing Settings:**
+- From OMI app: Tap the integration → Opens homepage with settings automatically
+- Direct link: `https://your-app.up.railway.app/?uid=YOUR_USER_ID`
+- Settings include: Timezone selector, Chat refresh, Logout
 
 ## 🛠️ Development Setup
 
