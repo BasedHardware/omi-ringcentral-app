@@ -197,29 +197,12 @@ function startTimeoutMonitor() {
                                 if (title && title.trim().length >= 3) {
                                     console.log(`⏰ Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                                     
-                                    const taskBody = {
-                                        subject: title,
-                                        status: 'Pending'
-                                    };
-                                    
-                                    if (assigneeId) {
-                                        taskBody.assignees = [{ id: assigneeId }];
+                                    try {
+                                        await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
+                                        console.log(`⏰ SUCCESS! Task created via timeout: ${title}`);
+                                    } catch (error) {
+                                        console.error(`⏰ Failed to create task: ${error.message}`);
                                     }
-                                    
-                                    if (dueDate) {
-                                        let dueDateTimeStr = dueDate;
-                                        if (dueTime) {
-                                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
-                                        } else {
-                                            dueDateTimeStr = `${dueDate}T23:59:59`;
-                                        }
-                                        taskBody.completenessCondition = {
-                                            dueDate: dueDateTimeStr
-                                        };
-                                    }
-                                    
-                                    await platform.post('/team-messaging/v1/tasks', taskBody);
-                                    console.log(`⏰ SUCCESS! Task created via timeout: ${title}`);
                                 } else {
                                     console.log(`⏰ Insufficient content for task (title: '${title ? title.substring(0, 50) : 'None'}...')`);
                                 }
@@ -269,6 +252,82 @@ function startTimeoutMonitor() {
             console.error(`❌ Timeout monitor error: ${error}`);
         }
     }, 1000); // Check every second
+}
+
+// Helper function to create task in RingCentral
+async function createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime) {
+    // Get or create a chat for the task
+    // If there's an assignee, find/create DM with them, otherwise use personal chat
+    let taskChatId = null;
+    
+    if (assigneeId) {
+        // Try to find existing DM with assignee
+        const chatsResponse = await platform.get('/team-messaging/v1/chats?type=Direct');
+        const chatsData = await chatsResponse.json();
+        const chats = chatsData.records || [];
+        
+        // Find DM with this person
+        for (const chat of chats) {
+            if (chat.members && chat.members.some(m => m.id === assigneeId)) {
+                taskChatId = chat.id;
+                console.log(`✓ Found existing DM chat ${taskChatId} with ${assigneeName}`);
+                break;
+            }
+        }
+        
+        // If no DM exists, create one
+        if (!taskChatId) {
+            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
+                type: 'Direct',
+                members: [{ id: assigneeId }]
+            });
+            const newChat = await createChatResponse.json();
+            taskChatId = newChat.id;
+            console.log(`✓ Created new DM chat ${taskChatId} with ${assigneeName}`);
+        }
+    } else {
+        // No assignee - use personal chat (create if needed)
+        const chatsResponse = await platform.get('/team-messaging/v1/chats?type=Personal');
+        const chatsData = await chatsResponse.json();
+        const personalChats = chatsData.records || [];
+        
+        if (personalChats.length > 0) {
+            taskChatId = personalChats[0].id;
+            console.log(`✓ Using personal chat ${taskChatId} for unassigned task`);
+        } else {
+            // Create personal chat
+            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
+                type: 'Personal'
+            });
+            const newChat = await createChatResponse.json();
+            taskChatId = newChat.id;
+            console.log(`✓ Created personal chat ${taskChatId}`);
+        }
+    }
+    
+    // Build task body
+    const taskBody = {
+        subject: title
+    };
+    
+    if (assigneeId) {
+        taskBody.assignees = [{ id: assigneeId }];
+    }
+    
+    if (dueDate) {
+        let dueDateTimeStr = dueDate;
+        if (dueTime) {
+            dueDateTimeStr = `${dueDate}T${dueTime}:00Z`;
+        } else {
+            dueDateTimeStr = `${dueDate}T23:59:59Z`;
+        }
+        taskBody.dueDate = dueDateTimeStr;
+    }
+    
+    // Create task in the chat
+    console.log(`✓ Creating task in chat ${taskChatId}:`, taskBody);
+    const response = await platform.post(`/restapi/v1.0/glip/chats/${taskChatId}/tasks`, taskBody);
+    return await response.json();
 }
 
 // Start timeout monitor
@@ -568,28 +627,7 @@ async function processSegments(session, segments, user) {
                 console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                 
                 try {
-                    const taskBody = {
-                        subject: title,
-                        status: 'Pending'
-                    };
-                    
-                    if (assigneeId) {
-                        taskBody.assignees = [{ id: assigneeId }];
-                    }
-                    
-                    if (dueDate) {
-                        let dueDateTimeStr = dueDate;
-                        if (dueTime) {
-                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
-                        } else {
-                            dueDateTimeStr = `${dueDate}T23:59:59`;
-                        }
-                        taskBody.completenessCondition = {
-                            dueDate: dueDateTimeStr
-                        };
-                    }
-                    
-                    await platform.post('/team-messaging/v1/tasks', taskBody);
+                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
@@ -718,28 +756,7 @@ async function processSegments(session, segments, user) {
                 console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                 
                 try {
-                    const taskBody = {
-                        subject: title,
-                        status: 'Pending'
-                    };
-                    
-                    if (assigneeId) {
-                        taskBody.assignees = [{ id: assigneeId }];
-                    }
-                    
-                    if (dueDate) {
-                        let dueDateTimeStr = dueDate;
-                        if (dueTime) {
-                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
-                        } else {
-                            dueDateTimeStr = `${dueDate}T23:59:59`;
-                        }
-                        taskBody.completenessCondition = {
-                            dueDate: dueDateTimeStr
-                        };
-                    }
-                    
-                    await platform.post('/team-messaging/v1/tasks', taskBody);
+                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
