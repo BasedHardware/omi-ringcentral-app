@@ -44,7 +44,7 @@ Voice-activated RingCentral messaging and task creation through your OMI device.
 
 **The app intelligently processes your voice commands:**
 1. Detects trigger phrase → Starts collecting
-2. Collects up to 5 segments OR stops if 5+ second gap detected
+2. Collects up to 5 segments OR stops if 10+ second gap detected
 3. AI extracts:
    - Chat name (fuzzy matches to your workspace chats)
    - Message content (cleaned and formatted)
@@ -58,7 +58,7 @@ You: "Send ring message to general saying hello team"
      [collecting segment 1/5...]
 You: "hope everyone is having a great day"
      [collecting segment 2/5...]
-     [5+ second pause - timeout!]
+     [10+ second pause - timeout!]
      → AI processes 2 segments
      
 AI Extracted:
@@ -239,14 +239,14 @@ Message: "Hello team, hope you're all doing great today"
 **OMI sends transcripts in segments** as you speak. The app:
 - ✅ Detects trigger phrase (Send ring message / Send ringcentral message / Post ring message / Post ringcentral message)
 - ✅ Collects up to 5 segments MAX
-- ✅ Processes early if 5+ second gap detected (minimum 2 segments)
+- ✅ Processes early if 10+ second gap detected (minimum 2 segments)
 - ✅ Silent during collection (no spam)
 - ✅ AI processes all collected segments together
 - ✅ One notification on completion
 
 **Smart Collection:**
 - **Max segments:** 5 (including trigger)
-- **Timeout:** 5 seconds of silence → processes immediately
+- **Timeout:** 10 seconds of silence → processes immediately
 - **Minimum:** 2 segments (trigger + content)
 - **Duration:** ~5-20 seconds depending on speech
 - **Auto-refresh:** Fetches latest chats every time (new chats work immediately!)
