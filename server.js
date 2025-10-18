@@ -188,7 +188,8 @@ function startTimeoutMonitor() {
                                     console.log(`⏰ Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                                     
                                     try {
-                                        await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
+                                        const userSettings = SimpleUserStorage.getUserSettings(uid);
+                                        await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime, userSettings.timezone);
                                         console.log(`⏰ SUCCESS! Task created via timeout: ${title}`);
                                     } catch (error) {
                                         console.error(`⏰ Failed to create task: ${error.message}`);
@@ -295,8 +296,46 @@ async function getEnrichedTeamMembers(platform) {
     return enrichedMembers;
 }
 
+// Helper function to convert date/time to user's timezone and then to UTC
+function convertToUserTimezone(dueDate, dueTime, userTimezone) {
+    // Create a date string in the user's timezone
+    let dateTimeStr = dueDate;
+    if (dueTime) {
+        dateTimeStr = `${dueDate}T${dueTime}:00`;
+    } else {
+        dateTimeStr = `${dueDate}T23:59:59`;
+    }
+    
+    // Parse as if it's in the user's timezone
+    // Since we don't have a timezone library, we'll use a simple offset approach
+    // This is a simplified version - for production, use a library like moment-timezone
+    const date = new Date(dateTimeStr);
+    
+    // Get timezone offset in hours from a lookup table
+    const timezoneOffsets = {
+        'America/Los_Angeles': -7,  // PDT (summer)
+        'America/Denver': -6,        // MDT
+        'America/Chicago': -5,       // CDT
+        'America/New_York': -4,      // EDT
+        'America/Phoenix': -7,       // MST (no DST)
+        'UTC': 0,
+        'Europe/London': 1,          // BST
+        'Europe/Paris': 2,           // CEST
+        'Asia/Tokyo': 9,
+        'Australia/Sydney': 10       // AEST
+    };
+    
+    const offsetHours = timezoneOffsets[userTimezone] || -7; // Default to PT
+    
+    // Adjust the date by the offset to convert to UTC
+    const utcDate = new Date(date.getTime() - (offsetHours * 60 * 60 * 1000));
+    
+    // Return in ISO format with Z
+    return utcDate.toISOString();
+}
+
 // Helper function to create task in RingCentral
-async function createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime) {
+async function createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime, userTimezone = 'America/Los_Angeles') {
     // Get or create a chat for the task
     // If there's an assignee, find/create DM with them, otherwise use personal chat
     let taskChatId = null;
@@ -356,13 +395,10 @@ async function createRingCentralTask(platform, title, assigneeId, assigneeName, 
     }
     
     if (dueDate) {
-        let dueDateTimeStr = dueDate;
-        if (dueTime) {
-            dueDateTimeStr = `${dueDate}T${dueTime}:00Z`;
-        } else {
-            dueDateTimeStr = `${dueDate}T23:59:59Z`;
-        }
-        taskBody.dueDate = dueDateTimeStr;
+        // Convert to user's timezone then to UTC
+        const dueDateTimeUTC = convertToUserTimezone(dueDate, dueTime, userTimezone);
+        taskBody.dueDate = dueDateTimeUTC;
+        console.log(`✓ Due date in ${userTimezone}: ${dueDate}${dueTime ? ` ${dueTime}` : ' 23:59:59'} → UTC: ${dueDateTimeUTC}`);
     }
     
     // Create task in the chat
@@ -514,6 +550,29 @@ app.post('/refresh-chats', async (req, res) => {
     }
 });
 
+// Update settings
+app.post('/update-settings', async (req, res) => {
+    const { uid } = req.query;
+    const { timezone } = req.body;
+    
+    try {
+        if (!uid) {
+            return res.json({ success: false, error: 'Missing uid' });
+        }
+        
+        const success = SimpleUserStorage.updateUserSettings(uid, { timezone });
+        
+        if (success) {
+            res.json({ success: true, message: 'Settings updated' });
+        } else {
+            res.json({ success: false, error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Settings update error:', error);
+        res.json({ success: false, error: error.message });
+    }
+});
+
 // Logout
 app.post('/logout', async (req, res) => {
     const { uid } = req.query;
@@ -658,7 +717,9 @@ async function processSegments(session, segments, user) {
                 console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                 
                 try {
-                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
+                    const uid = session.uid;
+                    const userSettings = SimpleUserStorage.getUserSettings(uid);
+                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime, userSettings.timezone);
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
@@ -777,7 +838,9 @@ async function processSegments(session, segments, user) {
                 console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
                 
                 try {
-                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime);
+                    const uid = session.uid;
+                    const userSettings = SimpleUserStorage.getUserSettings(uid);
+                    await createRingCentralTask(platform, title, assigneeId, assigneeName, dueDate, dueTime, userSettings.timezone);
                     
                     SimpleSessionStorage.resetSession(sessionId);
                     console.log(`🎉 SUCCESS! Task created: ${title}`);
@@ -1031,78 +1094,121 @@ function getNotAuthenticatedHTML(authUrl, uid) {
 }
 
 function getAuthenticatedHTML(uid, chats) {
-    const chatOptions = chats.map(chat => {
-        const displayName = chat.displayName || chat.name || chat.description || `Chat ${chat.id}`;
-        return `<li>${displayName} (${chat.id})</li>`;
-    }).join('');
+    const user = SimpleUserStorage.getUser(uid);
+    const settings = SimpleUserStorage.getUserSettings(uid);
+    const currentTimezone = settings.timezone || 'America/Los_Angeles';
     
     return `
 <!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>RingCentral Settings</title>
-    <style>${getCSS()}</style>
+    <title>RingCentral Voice Integration</title>
+    <style>${getModernCSS()}</style>
 </head>
 <body>
     <div class="container">
-        <div class="card" style="margin-top: 20px;">
-            <h2>📞 RingCentral Settings</h2>
-            <p style="text-align: left; font-size: 14px; margin-bottom: 8px; color: #8b949e;">
-                Connected to <span class="username">RingCentral</span>
-            </p>
-            <p style="text-align: left; font-size: 14px; margin-bottom: 16px;">
-                Found ${chats.length} available chat(s)
-            </p>
-            
-            <button type="button" class="btn btn-secondary btn-block" onclick="refreshChats()">
-                🔄 Refresh Chats
-            </button>
-            <button type="button" class="btn btn-secondary btn-block" onclick="logoutUser()" style="margin-top: 20px; border-color: #e01e5a; color: #e01e5a;">
-                🚪 Logout & Clear Data
-            </button>
-        </div>
-        
-        <div class="card">
-            <h3>💬 Available Chats</h3>
-            <ul style="list-style: none; padding: 0; max-height: 300px; overflow-y: auto;">
-                ${chatOptions || '<li>No chats found</li>'}
-            </ul>
-        </div>
-        
-        <div class="card">
-            <h3>🎤 Using Voice Commands</h3>
-            <p style="text-align: left; margin-bottom: 16px;">
-                Simply speak to your OMI device:
-            </p>
-            <div class="steps">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        Say <strong>"Send ring message"</strong> or <strong>"Send ringcentral message"</strong>
+        <header class="header">
+            <div class="header-content">
+                <h1>🔊 Ring Voice</h1>
+                <p class="subtitle">Voice-powered messaging & task management</p>
+            </div>
+            <div class="connection-badge">
+                <div class="status-dot"></div>
+                Connected
+            </div>
+        </header>
+
+        <div class="feature-grid">
+            <div class="feature-card messages">
+                <div class="feature-icon">💬</div>
+                <h3>Send Messages</h3>
+                <p class="feature-desc">Voice-activated messaging to any chat</p>
+                <div class="examples">
+                    <div class="example-item">
+                        <span class="example-label">Try saying:</span>
+                        <code>"Send ring message to general saying hello team"</code>
+                    </div>
+                    <div class="example-item">
+                        <code>"Send ringcentral message to John that meeting is at 3pm"</code>
                     </div>
                 </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        Mention the chat/person and speak your message
+                <div class="feature-stats">
+                    <span class="stat">${chats.length} chats available</span>
+                </div>
+            </div>
+
+            <div class="feature-card tasks">
+                <div class="feature-icon">📋</div>
+                <h3>Create Tasks</h3>
+                <p class="feature-desc">AI-powered task creation with smart assignment</p>
+                <div class="examples">
+                    <div class="example-item">
+                        <span class="example-label">Try saying:</span>
+                        <code>"Create ring task for Lopez due tomorrow at 3pm review proposal"</code>
+                    </div>
+                    <div class="example-item">
+                        <code>"Add ring task finish report by Friday"</code>
                     </div>
                 </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        Message posted instantly!
-                    </div>
+                <div class="feature-stats">
+                    <span class="stat">Smart date & time parsing</span>
                 </div>
             </div>
         </div>
-        
-        <div class="footer">
-            <p>Powered by <strong>OMI</strong> × <strong>AI</strong></p>
+
+        <div class="settings-card">
+            <h2>⚙️ Settings</h2>
+            
+            <div class="setting-group">
+                <label for="timezone">Timezone (for task due dates)</label>
+                <select id="timezone" class="setting-select">
+                    <option value="America/Los_Angeles" ${currentTimezone === 'America/Los_Angeles' ? 'selected' : ''}>Pacific Time (PT)</option>
+                    <option value="America/Denver" ${currentTimezone === 'America/Denver' ? 'selected' : ''}>Mountain Time (MT)</option>
+                    <option value="America/Chicago" ${currentTimezone === 'America/Chicago' ? 'selected' : ''}>Central Time (CT)</option>
+                    <option value="America/New_York" ${currentTimezone === 'America/New_York' ? 'selected' : ''}>Eastern Time (ET)</option>
+                    <option value="America/Phoenix" ${currentTimezone === 'America/Phoenix' ? 'selected' : ''}>Arizona (MST)</option>
+                    <option value="UTC" ${currentTimezone === 'UTC' ? 'selected' : ''}>UTC</option>
+                    <option value="Europe/London" ${currentTimezone === 'Europe/London' ? 'selected' : ''}>London (GMT/BST)</option>
+                    <option value="Europe/Paris" ${currentTimezone === 'Europe/Paris' ? 'selected' : ''}>Paris (CET/CEST)</option>
+                    <option value="Asia/Tokyo" ${currentTimezone === 'Asia/Tokyo' ? 'selected' : ''}>Tokyo (JST)</option>
+                    <option value="Australia/Sydney" ${currentTimezone === 'Australia/Sydney' ? 'selected' : ''}>Sydney (AEST)</option>
+                </select>
+                <button class="btn-primary" onclick="saveTimezone()">Save Timezone</button>
+            </div>
+
+            <div class="setting-actions">
+                <button class="btn-secondary" onclick="refreshChats()">
+                    🔄 Refresh Chats
+                </button>
+                <button class="btn-danger" onclick="logoutUser()">
+                    🚪 Logout
+                </button>
+            </div>
         </div>
     </div>
     
     <script>
+        async function saveTimezone() {
+            const timezone = document.getElementById('timezone').value;
+            try {
+                const response = await fetch('/update-settings?uid=${uid}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Timezone updated!');
+                } else {
+                    alert('❌ Failed: ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
         async function refreshChats() {
             try {
                 const response = await fetch('/refresh-chats?uid=${uid}', {
@@ -1111,7 +1217,7 @@ function getAuthenticatedHTML(uid, chats) {
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert('✅ Chats refreshed! Reloading...');
+                    alert('✅ Chats refreshed!');
                     window.location.reload();
                 } else {
                     alert('❌ Failed: ' + data.error);
@@ -1122,6 +1228,8 @@ function getAuthenticatedHTML(uid, chats) {
         }
         
         async function logoutUser() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            
             try {
                 const response = await fetch('/logout?uid=${uid}', {
                     method: 'POST'
@@ -1380,6 +1488,276 @@ function getTestHTML(uid) {
     </script>
 </body>
 </html>
+    `;
+}
+
+function getModernCSS() {
+    return `
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .header-content h1 {
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        
+        .subtitle {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .connection-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #10b981;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .feature-card {
+            background: white;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+        
+        .feature-card.messages {
+            border-top: 4px solid #3b82f6;
+        }
+        
+        .feature-card.tasks {
+            border-top: 4px solid #8b5cf6;
+        }
+        
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .feature-card h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1f2937;
+        }
+        
+        .feature-desc {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        
+        .examples {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .example-item {
+            margin-bottom: 12px;
+        }
+        
+        .example-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .example-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+        
+        .example-item code {
+            display: block;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #374151;
+            font-family: 'Monaco', 'Courier New', monospace;
+            line-height: 1.5;
+        }
+        
+        .feature-stats {
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .stat {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        
+        .settings-card {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .settings-card h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #1f2937;
+        }
+        
+        .setting-group {
+            margin-bottom: 24px;
+        }
+        
+        .setting-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        
+        .setting-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 15px;
+            color: #1f2937;
+            background: white;
+            transition: border-color 0.2s;
+            margin-bottom: 12px;
+        }
+        
+        .setting-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .setting-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        button {
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        
+        .btn-danger {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+        
+        @media (max-width: 768px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                text-align: center;
+                gap: 16px;
+            }
+            
+            .setting-actions {
+                flex-direction: column;
+            }
+        }
     `;
 }
 

@@ -100,6 +100,31 @@ class SimpleUserStorage {
         }
         return false;
     }
+    
+    static updateUserSettings(uid, settings) {
+        if (users[uid]) {
+            users[uid].settings = {
+                ...users[uid].settings,
+                ...settings,
+                updated_at: new Date().toISOString()
+            };
+            saveUsers();
+            console.log(`⚙️  Updated settings for user ${uid.substring(0, 10)}...`);
+            return true;
+        }
+        return false;
+    }
+    
+    static getUserSettings(uid) {
+        const user = users[uid];
+        if (user && user.settings) {
+            return user.settings;
+        }
+        // Return defaults
+        return {
+            timezone: 'America/Los_Angeles' // Default to PT
+        };
+    }
 }
 
 class SimpleSessionStorage {
