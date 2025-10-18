@@ -1,11 +1,20 @@
 const OpenAI = require('openai');
 
 class MessageDetector {
-    static TRIGGER_PHRASES = [
+    static MESSAGE_TRIGGER_PHRASES = [
         "send ring message",
         "send ringcentral message",
         "post ring message",
         "post ringcentral message"
+    ];
+
+    static TASK_TRIGGER_PHRASES = [
+        "create ring task",
+        "create ringcentral task",
+        "add ring task",
+        "add ringcentral task",
+        "make ring task",
+        "make ringcentral task"
     ];
 
     constructor(apiKey) {
@@ -14,7 +23,19 @@ class MessageDetector {
 
     detectTrigger(text) {
         const normalized = text.toLowerCase().trim();
-        return MessageDetector.TRIGGER_PHRASES.some(trigger => normalized.includes(trigger));
+        return MessageDetector.MESSAGE_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger)) ||
+               MessageDetector.TASK_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger));
+    }
+
+    detectTriggerType(text) {
+        const normalized = text.toLowerCase().trim();
+        if (MessageDetector.TASK_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger))) {
+            return 'task';
+        }
+        if (MessageDetector.MESSAGE_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger))) {
+            return 'message';
+        }
+        return null;
     }
 
     extractMessageContent(text) {
@@ -24,7 +45,9 @@ class MessageDetector {
         let triggerIndex = -1;
         let matchedTrigger = null;
         
-        for (const trigger of MessageDetector.TRIGGER_PHRASES) {
+        const allTriggers = [...MessageDetector.MESSAGE_TRIGGER_PHRASES, ...MessageDetector.TASK_TRIGGER_PHRASES];
+        
+        for (const trigger of allTriggers) {
             const idx = normalized.indexOf(trigger);
             if (idx !== -1) {
                 triggerIndex = idx;
@@ -170,6 +193,178 @@ MESSAGE: Hello everyone, this is a test message`
         } catch (error) {
             console.error(`⚠️  AI extraction failed: ${error}`);
             return { chatId: null, chatName: null, message: allSegmentsText };
+        }
+    }
+
+    async aiExtractTaskDetails(allSegmentsText, availableMembers) {
+        // Create a list of member names for matching
+        const memberNames = availableMembers.map(member => member.displayName || member.name || member.email);
+        
+        const memberMap = {};
+        availableMembers.forEach(member => {
+            const name = member.displayName || member.name || member.email;
+            if (name) memberMap[name] = member.id;
+        });
+
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a RingCentral task parser. Extract task details from voice commands.
+
+Available team members: ${memberNames.length > 0 ? memberNames.join(', ') : 'None'}
+
+The user said something like "create task for [person] due [date/time] [task description]"
+
+Your job:
+1. Extract the task title/description (REQUIRED)
+2. Identify assignee if mentioned (fuzzy match from available members, or leave empty)
+3. Extract due date if mentioned (format: YYYY-MM-DD, or RELATIVE like "tomorrow", "next monday")
+4. Extract due time if mentioned (format: HH:MM in 24-hour format)
+
+Important:
+- Title is REQUIRED and should be clear and concise
+- Assignee can be a person's name (match to closest available member) or NONE
+- Due date can be relative ("tomorrow", "next week") or specific ("March 15")
+- Due time should be in 24-hour format (e.g., "14:30" for 2:30 PM)
+- If date/time/assignee not mentioned, use NONE
+
+Respond in this EXACT format:
+TITLE: <task title>
+ASSIGNEE: <person name or NONE>
+DUE_DATE: <YYYY-MM-DD or RELATIVE or NONE>
+DUE_TIME: <HH:MM or NONE>
+
+Examples:
+
+Input: "for lopez due tomorrow at 3pm review the marketing proposal"
+Output:
+TITLE: Review the marketing proposal
+ASSIGNEE: lopez
+DUE_DATE: RELATIVE:tomorrow
+DUE_TIME: 15:00
+
+Input: "finish the budget report by friday"
+Output:
+TITLE: Finish the budget report
+ASSIGNEE: NONE
+DUE_DATE: RELATIVE:friday
+DUE_TIME: NONE
+
+Input: "for sarah update the website design"
+Output:
+TITLE: Update the website design
+ASSIGNEE: sarah
+DUE_DATE: NONE
+DUE_TIME: NONE`
+                    },
+                    {
+                        role: "user",
+                        content: `Voice command after trigger: ${allSegmentsText}\n\nExtract task details:`
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 300
+            });
+
+            const result = response.choices[0].message.content.trim();
+            
+            // Parse response
+            let title = null;
+            let assigneeName = null;
+            let dueDate = null;
+            let dueTime = null;
+            
+            for (const line of result.split('\n')) {
+                if (line.startsWith("TITLE:")) {
+                    title = line.replace("TITLE:", "").trim();
+                } else if (line.startsWith("ASSIGNEE:")) {
+                    assigneeName = line.replace("ASSIGNEE:", "").trim();
+                } else if (line.startsWith("DUE_DATE:")) {
+                    dueDate = line.replace("DUE_DATE:", "").trim();
+                } else if (line.startsWith("DUE_TIME:")) {
+                    dueTime = line.replace("DUE_TIME:", "").trim();
+                }
+            }
+
+            // Handle NONE values
+            if (assigneeName && assigneeName.toUpperCase() === "NONE") assigneeName = null;
+            if (dueDate && dueDate.toUpperCase() === "NONE") dueDate = null;
+            if (dueTime && dueTime.toUpperCase() === "NONE") dueTime = null;
+
+            // Match assignee to actual member ID
+            let assigneeId = null;
+            if (assigneeName) {
+                for (const [name, id] of Object.entries(memberMap)) {
+                    if (name.toLowerCase() === assigneeName.toLowerCase()) {
+                        assigneeId = id;
+                        assigneeName = name;
+                        break;
+                    }
+                }
+                
+                // Try fuzzy match if exact match not found
+                if (!assigneeId) {
+                    for (const [name, id] of Object.entries(memberMap)) {
+                        if (assigneeName.toLowerCase().includes(name.toLowerCase()) || 
+                            name.toLowerCase().includes(assigneeName.toLowerCase())) {
+                            assigneeId = id;
+                            assigneeName = name;
+                            console.log(`🔍 Fuzzy matched assignee '${assigneeName}' to '${name}'`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Parse relative dates (basic implementation)
+            if (dueDate && dueDate.startsWith('RELATIVE:')) {
+                const relative = dueDate.replace('RELATIVE:', '').toLowerCase();
+                const now = new Date();
+                
+                if (relative === 'today') {
+                    dueDate = now.toISOString().split('T')[0];
+                } else if (relative === 'tomorrow') {
+                    now.setDate(now.getDate() + 1);
+                    dueDate = now.toISOString().split('T')[0];
+                } else if (relative.includes('monday') || relative.includes('tuesday') || 
+                           relative.includes('wednesday') || relative.includes('thursday') ||
+                           relative.includes('friday') || relative.includes('saturday') || 
+                           relative.includes('sunday')) {
+                    // Simple day-of-week logic (find next occurrence)
+                    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                    const targetDay = days.findIndex(day => relative.includes(day));
+                    if (targetDay !== -1) {
+                        const currentDay = now.getDay();
+                        let daysToAdd = targetDay - currentDay;
+                        if (daysToAdd <= 0) daysToAdd += 7;
+                        now.setDate(now.getDate() + daysToAdd);
+                        dueDate = now.toISOString().split('T')[0];
+                    }
+                }
+            }
+
+            console.log(`✅ Extracted Task - Title: "${title}", Assignee: ${assigneeName || 'None'}, Due: ${dueDate || 'None'} ${dueTime || ''}`);
+            
+            return { 
+                title, 
+                assigneeId, 
+                assigneeName, 
+                dueDate, 
+                dueTime 
+            };
+            
+        } catch (error) {
+            console.error(`⚠️  AI task extraction failed: ${error}`);
+            return { 
+                title: allSegmentsText, 
+                assigneeId: null, 
+                assigneeName: null, 
+                dueDate: null, 
+                dueTime: null 
+            };
         }
     }
 }

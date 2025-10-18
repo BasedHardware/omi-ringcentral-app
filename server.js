@@ -154,8 +154,9 @@ function startTimeoutMonitor() {
                 if (idleTime && idleTime > 5) {
                     const segmentsCount = session.segments_count || 0;
                     const accumulated = session.accumulated_text || "";
+                    const triggerType = session.trigger_type || 'message';
                     
-                    console.log(`⏰ TIMEOUT MONITOR: Processing session ${sessionId} after ${idleTime.toFixed(1)}s idle (${segmentsCount} segment(s))`);
+                    console.log(`⏰ TIMEOUT MONITOR: Processing ${triggerType} for session ${sessionId} after ${idleTime.toFixed(1)}s idle (${segmentsCount} segment(s))`);
                     
                     const uid = session.uid;
                     const user = SimpleUserStorage.getUser(uid);
@@ -170,32 +171,89 @@ function startTimeoutMonitor() {
                             const platform = rcsdk.platform();
                             await platform.auth().setData(user.tokens);
                             
-                            // Fetch fresh chats
-                            const chatsResponse = await platform.get('/team-messaging/v1/chats');
-                            const chatsData = await chatsResponse.json();
-                            let chats = chatsData.records || chatsData || [];
-                            
-                            // Enrich chats with member names for DMs (only for message sending)
-                            console.log(`🔄 Enriching chats for message sending (timeout)...`);
-                            chats = await enrichChatsWithMemberNames(platform, chats);
-                            
-                            // AI extracts chat and message
-                            const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
-                                accumulated,
-                                chats
-                            );
-                            
-                            if (chatId && message && message.trim().length >= 3) {
-                                console.log(`⏰ Sending timeout message to ${chatName}`);
+                            if (triggerType === 'task') {
+                                // Handle task creation
+                                console.log(`⏰ Creating task (timeout)...`);
                                 
-                                await platform.post(
-                                    `/team-messaging/v1/chats/${chatId}/posts`,
-                                    { text: message }
+                                // Fetch team members
+                                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
+                                const membersData = await membersResponse.json();
+                                const members = membersData.records || [];
+                                
+                                // Add displayName for easier matching
+                                const enrichedMembers = members.map(m => ({
+                                    id: m.id,
+                                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                                    email: m.email
+                                }));
+                                
+                                // AI extracts task details
+                                const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
+                                    accumulated,
+                                    enrichedMembers
                                 );
                                 
-                                console.log(`⏰ SUCCESS! Timeout message sent to ${chatName}`);
+                                if (title && title.trim().length >= 3) {
+                                    console.log(`⏰ Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
+                                    
+                                    const taskBody = {
+                                        subject: title,
+                                        status: 'Pending'
+                                    };
+                                    
+                                    if (assigneeId) {
+                                        taskBody.assignees = [{ id: assigneeId }];
+                                    }
+                                    
+                                    if (dueDate) {
+                                        let dueDateTimeStr = dueDate;
+                                        if (dueTime) {
+                                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
+                                        } else {
+                                            dueDateTimeStr = `${dueDate}T23:59:59`;
+                                        }
+                                        taskBody.completenessCondition = {
+                                            dueDate: dueDateTimeStr
+                                        };
+                                    }
+                                    
+                                    await platform.post('/team-messaging/v1/tasks', taskBody);
+                                    console.log(`⏰ SUCCESS! Task created via timeout: ${title}`);
+                                } else {
+                                    console.log(`⏰ Insufficient content for task (title: '${title ? title.substring(0, 50) : 'None'}...')`);
+                                }
                             } else {
-                                console.log(`⏰ Insufficient content to send (message: '${message ? message.substring(0, 50) : 'None'}...')`);
+                                // Handle message sending
+                                console.log(`⏰ Sending message (timeout)...`);
+                                
+                                // Fetch fresh chats
+                                const chatsResponse = await platform.get('/team-messaging/v1/chats');
+                                const chatsData = await chatsResponse.json();
+                                let chats = chatsData.records || chatsData || [];
+                                
+                                // Enrich chats with member names for DMs (only for message sending)
+                                console.log(`🔄 Enriching chats for message sending (timeout)...`);
+                                chats = await enrichChatsWithMemberNames(platform, chats);
+                                
+                                // AI extracts chat and message
+                                const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
+                                    accumulated,
+                                    chats
+                                );
+                                
+                                if (chatId && message && message.trim().length >= 3) {
+                                    console.log(`⏰ Sending timeout message to ${chatName}`);
+                                    
+                                    await platform.post(
+                                        `/team-messaging/v1/chats/${chatId}/posts`,
+                                        { text: message }
+                                    );
+                                    
+                                    console.log(`⏰ SUCCESS! Timeout message sent to ${chatName}`);
+                                } else {
+                                    console.log(`⏰ Insufficient content to send (message: '${message ? message.substring(0, 50) : 'None'}...')`);
+                                }
                             }
                             
                             SimpleSessionStorage.resetSession(sessionId);
@@ -466,66 +524,133 @@ async function processSegments(session, segments, user) {
     
     // Check for trigger phrase
     if (messageDetector.detectTrigger(fullText) && session.message_mode === "idle") {
-        const messageContent = messageDetector.extractMessageContent(fullText);
+        const triggerType = messageDetector.detectTriggerType(fullText);
+        const content = messageDetector.extractMessageContent(fullText);
         
-        console.log(`🎤 TRIGGER! ${isTestSession ? '[TEST MODE] Processing immediately...' : 'Starting segment collection...'}`);
-        console.log(`   Content: '${messageContent}'`);
+        console.log(`🎤 TRIGGER! Type: ${triggerType} ${isTestSession ? '[TEST MODE] Processing immediately...' : 'Starting segment collection...'}`);
+        console.log(`   Content: '${content}'`);
         
         // TEST MODE: Process immediately
-        if (isTestSession && messageContent && messageContent.length > 10) {
+        if (isTestSession && content && content.length > 10) {
             console.log(`🧪 Test mode: Processing full text immediately...`);
             
             const platform = rcsdk.platform();
             await platform.auth().setData(user.tokens);
             
-            // Fetch fresh chats
-            console.log(`🔄 Fetching fresh chat list...`);
-            const chatsResponse = await platform.get('/team-messaging/v1/chats');
-            const chatsData = await chatsResponse.json();
-            let chats = chatsData.records || chatsData || [];
-            
-            // Enrich chats with member names for DMs (only for message sending)
-            console.log(`🔄 Enriching chats for message sending (test mode)...`);
-            chats = await enrichChatsWithMemberNames(platform, chats);
-            
-            // AI extracts chat and message
-            const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
-                messageContent,
-                chats
-            );
-            
-            if (!chatId) {
-                SimpleSessionStorage.resetSession(sessionId);
-                return "❌ No chat specified and no default chat set";
-            }
-            
-            if (!message) {
-                SimpleSessionStorage.resetSession(sessionId);
-                return "❌ No message content found";
-            }
-            
-            console.log(`📤 Sending to ${chatName}: '${message}'`);
-            
-            try {
-                await platform.post(
-                    `/team-messaging/v1/chats/${chatId}/posts`,
-                    { text: message }
+            if (triggerType === 'task') {
+                // Handle task creation
+                console.log(`📋 Creating task...`);
+                
+                // Fetch team members
+                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
+                const membersData = await membersResponse.json();
+                const members = membersData.records || [];
+                
+                // Add displayName for easier matching
+                const enrichedMembers = members.map(m => ({
+                    id: m.id,
+                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                    email: m.email
+                }));
+                
+                // AI extracts task details
+                const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
+                    content,
+                    enrichedMembers
                 );
                 
-                SimpleSessionStorage.resetSession(sessionId);
-                console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
-                return `✅ Message sent to ${chatName}: ${message}`;
-            } catch (error) {
-                SimpleSessionStorage.resetSession(sessionId);
-                console.error(`❌ FAILED: ${error.message}`);
-                return `❌ Failed: ${error.message}`;
+                if (!title || title.trim().length < 3) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    return "❌ No valid task title found";
+                }
+                
+                console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
+                
+                try {
+                    const taskBody = {
+                        subject: title,
+                        status: 'Pending'
+                    };
+                    
+                    if (assigneeId) {
+                        taskBody.assignees = [{ id: assigneeId }];
+                    }
+                    
+                    if (dueDate) {
+                        let dueDateTimeStr = dueDate;
+                        if (dueTime) {
+                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
+                        } else {
+                            dueDateTimeStr = `${dueDate}T23:59:59`;
+                        }
+                        taskBody.completenessCondition = {
+                            dueDate: dueDateTimeStr
+                        };
+                    }
+                    
+                    await platform.post('/team-messaging/v1/tasks', taskBody);
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Task created: ${title}`);
+                    const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
+                    return `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed to create task: ${error.message}`;
+                }
+            } else {
+                // Handle message sending (original logic)
+                console.log(`🔄 Fetching fresh chat list...`);
+                const chatsResponse = await platform.get('/team-messaging/v1/chats');
+                const chatsData = await chatsResponse.json();
+                let chats = chatsData.records || chatsData || [];
+                
+                // Enrich chats with member names for DMs (only for message sending)
+                console.log(`🔄 Enriching chats for message sending (test mode)...`);
+                chats = await enrichChatsWithMemberNames(platform, chats);
+                
+                // AI extracts chat and message
+                const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
+                    content,
+                    chats
+                );
+                
+                if (!chatId) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    return "❌ No chat specified and no default chat set";
+                }
+                
+                if (!message) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    return "❌ No message content found";
+                }
+                
+                console.log(`📤 Sending to ${chatName}: '${message}'`);
+                
+                try {
+                    await platform.post(
+                        `/team-messaging/v1/chats/${chatId}/posts`,
+                        { text: message }
+                    );
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
+                    return `✅ Message sent to ${chatName}: ${message}`;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed: ${error.message}`;
+                }
             }
         }
         
         // REAL MODE: Start collecting segments
         SimpleSessionStorage.updateSession(sessionId, {
             message_mode: "recording",
-            accumulated_text: messageContent || fullText,
+            trigger_type: triggerType,
+            accumulated_text: content || fullText,
             segments_count: 1
         });
         
@@ -552,6 +677,8 @@ async function processSegments(session, segments, user) {
         if (segmentsCount >= 5) {
             console.log(`✅ Max segments reached (${segmentsCount})! Processing...`);
             
+            const triggerType = session.trigger_type || 'message';
+            
             SimpleSessionStorage.updateSession(sessionId, {
                 message_mode: "processing"
             });
@@ -559,43 +686,109 @@ async function processSegments(session, segments, user) {
             const platform = rcsdk.platform();
             await platform.auth().setData(user.tokens);
             
-            // Fetch fresh chats
-            console.log(`🔄 Fetching fresh chat list...`);
-            const chatsResponse = await platform.get('/team-messaging/v1/chats');
-            const chatsData = await chatsResponse.json();
-            let chats = chatsData.records || chatsData || [];
-            
-            // Enrich chats with member names for DMs (only for message sending)
-            console.log(`🔄 Enriching chats for message sending (webhook)...`);
-            chats = await enrichChatsWithMemberNames(platform, chats);
-            
-            // AI extracts chat and message
-            const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
-                accumulated,
-                chats
-            );
-            
-            if (!chatId || !message || message.trim().length < 3) {
-                SimpleSessionStorage.resetSession(sessionId);
-                console.log(`⚠️  No valid message content`);
-                return "❌ No valid message content";
-            }
-            
-            console.log(`📤 Sending to ${chatName}: '${message}'`);
-            
-            try {
-                await platform.post(
-                    `/team-messaging/v1/chats/${chatId}/posts`,
-                    { text: message }
+            if (triggerType === 'task') {
+                // Handle task creation
+                console.log(`📋 Creating task from accumulated segments...`);
+                
+                // Fetch team members
+                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
+                const membersData = await membersResponse.json();
+                const members = membersData.records || [];
+                
+                // Add displayName for easier matching
+                const enrichedMembers = members.map(m => ({
+                    id: m.id,
+                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
+                    email: m.email
+                }));
+                
+                // AI extracts task details
+                const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
+                    accumulated,
+                    enrichedMembers
                 );
                 
-                SimpleSessionStorage.resetSession(sessionId);
-                console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
-                return `✅ Message sent to ${chatName}: ${message}`;
-            } catch (error) {
-                SimpleSessionStorage.resetSession(sessionId);
-                console.error(`❌ FAILED: ${error.message}`);
-                return `❌ Failed: ${error.message}`;
+                if (!title || title.trim().length < 3) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`⚠️  No valid task title found`);
+                    return "❌ No valid task title found";
+                }
+                
+                console.log(`📤 Creating task: "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
+                
+                try {
+                    const taskBody = {
+                        subject: title,
+                        status: 'Pending'
+                    };
+                    
+                    if (assigneeId) {
+                        taskBody.assignees = [{ id: assigneeId }];
+                    }
+                    
+                    if (dueDate) {
+                        let dueDateTimeStr = dueDate;
+                        if (dueTime) {
+                            dueDateTimeStr = `${dueDate}T${dueTime}:00`;
+                        } else {
+                            dueDateTimeStr = `${dueDate}T23:59:59`;
+                        }
+                        taskBody.completenessCondition = {
+                            dueDate: dueDateTimeStr
+                        };
+                    }
+                    
+                    await platform.post('/team-messaging/v1/tasks', taskBody);
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Task created: ${title}`);
+                    const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
+                    return `✅ Task created: ${title}${assigneeName ? ` for ${assigneeName}` : ''}${dueInfo}`;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed to create task: ${error.message}`;
+                }
+            } else {
+                // Handle message sending (original logic)
+                console.log(`🔄 Fetching fresh chat list...`);
+                const chatsResponse = await platform.get('/team-messaging/v1/chats');
+                const chatsData = await chatsResponse.json();
+                let chats = chatsData.records || chatsData || [];
+                
+                // Enrich chats with member names for DMs (only for message sending)
+                console.log(`🔄 Enriching chats for message sending (webhook)...`);
+                chats = await enrichChatsWithMemberNames(platform, chats);
+                
+                // AI extracts chat and message
+                const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
+                    accumulated,
+                    chats
+                );
+                
+                if (!chatId || !message || message.trim().length < 3) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`⚠️  No valid message content`);
+                    return "❌ No valid message content";
+                }
+                
+                console.log(`📤 Sending to ${chatName}: '${message}'`);
+                
+                try {
+                    await platform.post(
+                        `/team-messaging/v1/chats/${chatId}/posts`,
+                        { text: message }
+                    );
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Message sent to ${chatName}`);
+                    return `✅ Message sent to ${chatName}: ${message}`;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed: ${error.message}`;
+                }
             }
         } else {
             console.log(`⏳ Collecting more segments (${segmentsCount}/5)... [Background monitor will handle timeout]`);

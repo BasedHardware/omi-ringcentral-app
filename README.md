@@ -1,11 +1,12 @@
-# 💬 RingCentral Voice Messenger for OMI
+# 💬 RingCentral Voice Messenger & Task Manager for OMI
 
-Voice-activated RingCentral messaging through your OMI device. Simply say "Send ring message to [chat]" followed by your message, and AI will automatically post it to the right RingCentral chat!
+Voice-activated RingCentral messaging and task creation through your OMI device. Simply say "Send ring message to [chat]" or "Create ring task for [person]" and AI will automatically handle the rest!
 
 ## ✨ Features
 
-- **🎤 Voice-Activated** - Say "Send ring message" and speak naturally
+- **🎤 Voice-Activated** - Say "Send ring message" or "Create ring task" and speak naturally
 - **🧠 AI-Powered Chat Matching** - AI intelligently matches spoken names to your workspace chats
+- **📋 Task Creation** - Create and assign tasks with voice commands, including due dates and times
 - **🔐 OAuth Authentication** - Secure RingCentral OAuth 2.0 integration
 - **💬 Direct Messages** - Works with DMs, channels, and group chats
 - **⚙️ Flexible Settings** - Change settings anytime from mobile-first homepage
@@ -19,17 +20,25 @@ Voice-activated RingCentral messaging through your OMI device. Simply say "Send 
 
 1. **Install the app** in your OMI mobile app
 2. **Authenticate** your RingCentral workspace (one-time)
-3. **Start messaging!**
+3. **Start messaging and creating tasks!**
    - Say: "Send ring message to general saying hello team!"
    - Say: "Post ringcentral message to marketing that the campaign is live"
-   - Say: "Send ring message to John saying can we meet tomorrow"
+   - Say: "Create ring task for Lopez due tomorrow at 3pm review the marketing proposal"
+   - Say: "Add ring task finish the budget report by Friday"
 
-### Trigger Phrases (ONLY these 4)
+### Trigger Phrases
 
+**For Messages:**
 - **"Send ring message"** - "Send ring message to general saying..."
 - **"Send ringcentral message"** - "Send ringcentral message to marketing that..."
 - **"Post ring message"** - "Post ring message to support saying..."
 - **"Post ringcentral message"** - "Post ringcentral message in engineering..."
+
+**For Tasks:**
+- **"Create ring task"** - "Create ring task for Lopez due tomorrow at 3pm..."
+- **"Create ringcentral task"** - "Create ringcentral task review the proposal..."
+- **"Add ring task"** - "Add ring task for Sarah finish the report by Friday..."
+- **"Make ring task"** - "Make ring task update the website..."
 
 ### How It Works
 
@@ -236,6 +245,40 @@ Message: "Hello team, hope you're all doing great today"
 - **Minimum:** 2 segments (trigger + content)
 - **Duration:** ~5-20 seconds depending on speech
 - **Auto-refresh:** Fetches latest chats every time (new chats work immediately!)
+
+## 📋 Task Creation
+
+Create tasks in RingCentral with natural voice commands! The AI will extract:
+- **Task title** (required)
+- **Assignee** (optional - matches to team members)
+- **Due date** (optional - supports relative dates like "tomorrow", "Friday")
+- **Due time** (optional - specify time for deadline)
+
+### Task Examples
+
+**Simple task (no assignee or due date):**
+- "Create ring task update the website homepage"
+- Result: Task created with title "Update the website homepage"
+
+**Task with assignee:**
+- "Create ring task for Lopez review the marketing proposal"
+- Result: Task assigned to Lopez (fuzzy matched from team members)
+
+**Task with due date:**
+- "Add ring task finish the budget report by Friday"
+- Result: Task with due date set to next Friday at 11:59 PM
+
+**Task with everything:**
+- "Create ring task for Sarah due tomorrow at 3pm update the client presentation"
+- Result: Task assigned to Sarah, due tomorrow at 3:00 PM, title "Update the client presentation"
+
+### How Task Matching Works
+
+The AI will:
+1. **Match assignee names** - Fuzzy matches spoken names to your RingCentral team members
+2. **Parse dates** - Understands "today", "tomorrow", "Friday", "next Monday", etc.
+3. **Extract time** - Converts "3pm", "2:30", "15:00" to proper time format
+4. **Clean title** - Removes filler words and creates clear, concise task titles
 
 ## 📱 Chat Management
 
