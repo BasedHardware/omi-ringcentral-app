@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Console - RingCentral Integration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="debug-mode">
+    <div class="container">
+        <header class="debug-header">
+            <h1>🛠️ Debug Console</h1>
+            <p class="subtitle">Test and debug your RingCentral integration</p>
+            <a href="/" class="back-link">← Back to Home</a>
+        </header>
+
+        <div id="auth-section">
+            <div class="debug-card">
+                <h2>Authentication Status</h2>
+                <div id="auth-status" class="status-display">Checking...</div>
+                <div class="button-group">
+                    <button id="login-btn" class="btn btn-primary">Connect RingCentral</button>
+                    <button id="check-auth-btn" class="btn btn-secondary">Check Status</button>
+                    <button id="logout-btn" class="btn btn-tertiary">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="message-section">
+            <div class="debug-card">
+                <h2>Send Test Message</h2>
+                <p class="help-text">
+                    Type naturally! Examples:<br>
+                    • "Send ringcentral message to marketing channel hello everyone"<br>
+                    • "Send to Lopez we have a meeting at 3pm"<br>
+                    • "Message marketing team customer needs help"
+                </p>
+
+                <form id="message-form">
+                    <div class="form-group">
+                        <label>Natural Language Input:</label>
+                        <textarea 
+                            id="natural-language-input" 
+                            placeholder="Type your message naturally here..."
+                            rows="4"
+                            required
+                        ></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="send-btn">
+                        <span id="send-btn-text">Send Message</span>
+                        <span id="send-btn-loader" style="display: none;">Sending...</span>
+                    </button>
+                </form>
+
+                <div id="result" style="display: none;"></div>
+            </div>
+
+            <div class="debug-card">
+                <h2>Available Channels</h2>
+                <button id="load-chats-btn" class="btn btn-secondary">Load My Channels</button>
+                <div id="chats-list" style="display: none;">
+                    <ul id="chats-ul"></ul>
+                </div>
+            </div>
+
+            <div class="debug-card">
+                <h2>Webhook Test</h2>
+                <p class="help-text">Test webhook endpoint with sample voice input</p>
+                <div class="form-group">
+                    <label>Sample Voice Input:</label>
+                    <textarea 
+                        id="webhook-input" 
+                        placeholder="Send ring message to Lopez saying hello there"
+                        rows="3"
+                    ></textarea>
+                </div>
+                <button id="test-webhook-btn" class="btn btn-secondary">Test Webhook</button>
+                <div id="webhook-result" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

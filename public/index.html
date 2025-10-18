@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RingCentral Voice Integration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="hero">
+            <div class="logo-area">
+                <div class="logo">RC</div>
+                <h1>RingCentral Voice Integration</h1>
+            </div>
+            <p class="tagline">Send messages with your voice through OMI</p>
+        </header>
+
+        <div id="auth-section">
+            <div id="not-authenticated" class="status-card">
+                <div class="status-icon">🔐</div>
+                <h2>Connect Your Account</h2>
+                <p>Authenticate with RingCentral to enable voice-to-message functionality</p>
+                <button id="login-btn" class="btn btn-primary">
+                    <span>Connect RingCentral</span>
+                </button>
+            </div>
+
+            <div id="authenticated" class="status-card connected" style="display: none;">
+                <div class="status-icon success">✓</div>
+                <h2>Connected</h2>
+                <p>Your RingCentral account is connected and ready</p>
+                <div class="connection-info">
+                    <div class="info-item">
+                        <span class="label">Status:</span>
+                        <span class="value active">Active</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Channels:</span>
+                        <span class="value" id="channels-count">Loading...</span>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button id="refresh-btn" class="btn btn-secondary">
+                        <span>Refresh Connection</span>
+                    </button>
+                    <button id="logout-btn" class="btn btn-tertiary">
+                        <span>Disconnect</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="info-section" style="display: none;">
+            <div class="info-card">
+                <h3>How to Use</h3>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Speak to OMI</h4>
+                            <p>Use trigger phrases like "Send ring message" or "Send ringcentral message"</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Specify Recipient</h4>
+                            <p>Mention the person or channel name, e.g., "to Lopez" or "to Marketing"</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Say Your Message</h4>
+                            <p>Speak naturally - the message will be sent automatically</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-card examples">
+                <h3>Example Commands</h3>
+                <div class="example-list">
+                    <div class="example">
+                        <span class="example-icon">💬</span>
+                        <p>"Send ring message to Marketing saying hello team"</p>
+                    </div>
+                    <div class="example">
+                        <span class="example-icon">💬</span>
+                        <p>"Send ringcentral message to Lopez that meeting is at 3pm"</p>
+                    </div>
+                    <div class="example">
+                        <span class="example-icon">💬</span>
+                        <p>"Post ring message to engineering the build is ready"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by <strong>OMI</strong> × <strong>RingCentral</strong></p>
+            <a href="/debug.html" class="debug-link">Debug Console</a>
+        </footer>
+    </div>
+
+    <script src="home.js"></script>
+</body>
+</html>
