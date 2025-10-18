@@ -62,20 +62,30 @@ async function enrichChatsWithMemberNames(platform, chats) {
                 const memberData = [];
                 
                 for (const member of chat.members) {
+                    // Skip bot/system accounts (glip- prefix)
+                    const memberId = member.id.toString();
+                    if (memberId.startsWith('glip-')) {
+                        console.log(`⏭️  Skipping bot/system account: ${memberId}`);
+                        continue;
+                    }
+                    
                     try {
-                        console.log(`🔍 Fetching details for member ${member.id}...`);
-                        const userResponse = await platform.get(`/team-messaging/v1/persons/${member.id}`);
+                        console.log(`🔍 Fetching details for member ${memberId}...`);
+                        const userResponse = await platform.get(`/team-messaging/v1/persons/${memberId}`);
                         const userData = await userResponse.json();
                         
                         const name = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email || null;
                         if (name) {
                             memberData.push({
-                                id: member.id.toString(),
+                                id: memberId,
                                 name: name
                             });
                         }
                     } catch (err) {
-                        console.log(`⚠️  Could not fetch details for member ${member.id}: ${err.message}`);
+                        // Silently skip members we can't fetch (likely bots or deleted users)
+                        if (!err.message.includes('404')) {
+                            console.log(`⚠️  Could not fetch member ${memberId}: ${err.message}`);
+                        }
                     }
                 }
                 
@@ -85,26 +95,32 @@ async function enrichChatsWithMemberNames(platform, chats) {
                     if (otherPerson) {
                         enrichedChat.displayName = otherPerson.name;
                         enrichedChat.dmPersonName = otherPerson.name;
-                        console.log(`✅ DM enriched: ${otherPerson.name} (excluding current user ${currentUserId})`);
+                        console.log(`✅ DM enriched: ${otherPerson.name}`);
                     } else if (memberData.length === 1) {
                         // Fallback to the only name we found
                         enrichedChat.displayName = memberData[0].name;
                         enrichedChat.dmPersonName = memberData[0].name;
-                        console.log(`✅ DM enriched: ${memberData[0].name} (only one member found)`);
+                        console.log(`✅ DM enriched: ${memberData[0].name}`);
                     }
                 } else if (memberData.length > 0) {
                     // If we don't know current user, pick the first one
                     enrichedChat.displayName = memberData[0].name;
                     enrichedChat.dmPersonName = memberData[0].name;
-                    console.log(`✅ DM enriched: ${memberData[0].name} (no current user ID)`);
+                    console.log(`✅ DM enriched: ${memberData[0].name}`);
                 }
                 
+                // If no displayName set, use a generic fallback
                 if (!enrichedChat.displayName) {
-                    enrichedChat.displayName = `DM with User ${chat.members[0].id}`;
+                    const realMembers = chat.members.filter(m => !m.id.toString().startsWith('glip-'));
+                    if (realMembers.length > 0) {
+                        enrichedChat.displayName = `DM ${chat.id}`;
+                    } else {
+                        enrichedChat.displayName = `Bot/System Chat ${chat.id}`;
+                    }
                 }
             } catch (err) {
                 console.log(`⚠️  Could not enrich DM chat ${chat.id}: ${err.message}`);
-                enrichedChat.displayName = `DM with User ${chat.id}`;
+                enrichedChat.displayName = `DM ${chat.id}`;
             }
         } else if (chat.type === 'Team') {
             enrichedChat.displayName = chat.name || chat.description || `Team Chat ${chat.id}`;
@@ -158,12 +174,9 @@ function startTimeoutMonitor() {
                             const chatsData = await chatsResponse.json();
                             let chats = chatsData.records || chatsData || [];
                             
-                            // Enrich chats with member names for DMs
+                            // Enrich chats with member names for DMs (only for message sending)
+                            console.log(`🔄 Enriching chats for message sending (timeout)...`);
                             chats = await enrichChatsWithMemberNames(platform, chats);
-                            
-                            if (chats.length > 0) {
-                                SimpleUserStorage.saveUser(uid, user.tokens, chats);
-                            }
                             
                             // AI extracts chat and message
                             const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
@@ -286,12 +299,9 @@ app.get('/oauth/callback', async (req, res) => {
         // Get chats
         const chatsResponse = await platform.get('/team-messaging/v1/chats');
         const chatsData = await chatsResponse.json();
-        let chats = chatsData.records || chatsData || [];
+        const chats = chatsData.records || chatsData || [];
         
-        // Enrich chats with member names for DMs
-        chats = await enrichChatsWithMemberNames(platform, chats);
-        
-        // Save user data
+        // Save user data (without enrichment - we'll enrich on-demand when sending)
         SimpleUserStorage.saveUser(uid, authData, chats);
         
         // Clean up state
@@ -334,10 +344,7 @@ app.post('/refresh-chats', async (req, res) => {
         
         const chatsResponse = await platform.get('/team-messaging/v1/chats');
         const chatsData = await chatsResponse.json();
-        let chats = chatsData.records || chatsData || [];
-        
-        // Enrich chats with member names for DMs
-        chats = await enrichChatsWithMemberNames(platform, chats);
+        const chats = chatsData.records || chatsData || [];
         
         SimpleUserStorage.saveUser(uid, user.tokens, chats);
         
@@ -467,13 +474,9 @@ async function processSegments(session, segments, user) {
             const chatsData = await chatsResponse.json();
             let chats = chatsData.records || chatsData || [];
             
-            // Enrich chats with member names for DMs
+            // Enrich chats with member names for DMs (only for message sending)
+            console.log(`🔄 Enriching chats for message sending (test mode)...`);
             chats = await enrichChatsWithMemberNames(platform, chats);
-            
-            if (chats.length > 0) {
-                SimpleUserStorage.saveUser(user.uid, user.tokens, chats);
-                console.log(`✅ Refreshed ${chats.length} chats`);
-            }
             
             // AI extracts chat and message
             const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
@@ -552,13 +555,9 @@ async function processSegments(session, segments, user) {
             const chatsData = await chatsResponse.json();
             let chats = chatsData.records || chatsData || [];
             
-            // Enrich chats with member names for DMs
+            // Enrich chats with member names for DMs (only for message sending)
+            console.log(`🔄 Enriching chats for message sending (webhook)...`);
             chats = await enrichChatsWithMemberNames(platform, chats);
-            
-            if (chats.length > 0) {
-                SimpleUserStorage.saveUser(user.uid, user.tokens, chats);
-                console.log(`✅ Refreshed ${chats.length} chats`);
-            }
             
             // AI extracts chat and message
             const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
@@ -632,10 +631,7 @@ app.get('/api/chats', async (req, res) => {
         await platform.auth().setData(user.tokens);
         const chatsResponse = await platform.get('/team-messaging/v1/chats');
         const chatsData = await chatsResponse.json();
-        let chats = chatsData.records || chatsData || [];
-        
-        // Enrich chats with member names for DMs
-        chats = await enrichChatsWithMemberNames(platform, chats);
+        const chats = chatsData.records || chatsData || [];
         
         SimpleUserStorage.saveUser(uid, user.tokens, chats);
         
@@ -672,12 +668,13 @@ app.post('/api/send-message', async (req, res) => {
         const chatsData = await chatsResponse.json();
         let chats = chatsData.records || chatsData || [];
         
-        // Enrich chats with member names for DMs
-        chats = await enrichChatsWithMemberNames(platform, chats);
-        
         if (chats.length > 0) {
             SimpleUserStorage.saveUser(uid, user.tokens, chats);
         }
+        
+        // Enrich chats with member names for DMs (only when sending message)
+        console.log(`🔄 Enriching chats for message sending...`);
+        chats = await enrichChatsWithMemberNames(platform, chats);
         
         // Use AI to extract message and channel
         const { chatId, chatName, message } = await messageDetector.aiExtractMessageAndChannel(
