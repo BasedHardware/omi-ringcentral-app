@@ -380,9 +380,16 @@ app.post('/logout', async (req, res) => {
 
 // Webhook endpoint - receives OMI transcripts
 app.post('/webhook', async (req, res) => {
+    console.log('📥 WEBHOOK RECEIVED:', {
+        query: req.query,
+        body: req.body ? (Array.isArray(req.body) ? `Array[${req.body.length}]` : Object.keys(req.body)) : 'empty',
+        headers: { 'content-type': req.headers['content-type'] }
+    });
+    
     const { uid, session_id } = req.query;
     
     if (!uid) {
+        console.log('❌ WEBHOOK ERROR: No uid provided');
         return res.status(401).json({
             message: "User ID required",
             setup_required: true
@@ -712,6 +719,16 @@ app.post('/api/send-message', async (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: "healthy", service: "omi-ringcentral-integration" });
+});
+
+// Webhook test endpoint (GET)
+app.get('/webhook', (req, res) => {
+    console.log('🔍 WEBHOOK GET TEST:', req.query);
+    res.json({ 
+        status: "webhook_ready",
+        message: "Webhook endpoint is active. Use POST to send transcripts.",
+        query_params: req.query
+    });
 });
 
 // HTML templates
