@@ -151,7 +151,7 @@ function startTimeoutMonitor() {
                 
                 const idleTime = SimpleSessionStorage.getSessionIdleTime(sessionId);
                 
-                if (idleTime && idleTime > 10) {
+                if (idleTime && idleTime > 7) {
                     const segmentsCount = session.segments_count || 0;
                     const accumulated = session.accumulated_text || "";
                     const triggerType = session.trigger_type || 'message';
