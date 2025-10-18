@@ -409,6 +409,8 @@ app.post('/webhook', async (req, res) => {
     
     try {
         const payload = req.body;
+        console.log('📦 FULL PAYLOAD:', JSON.stringify(payload, null, 2));
+        
         let segments = [];
         
         if (Array.isArray(payload)) {
@@ -421,7 +423,7 @@ app.post('/webhook', async (req, res) => {
         if (segments.length > 0) {
             segments.slice(0, 3).forEach((seg, i) => {
                 const text = seg.text || seg;
-                console.log(`   Segment ${i}: ${text.substring(0, 100)}`);
+                console.log(`   Segment ${i}: ${typeof text === 'string' ? text.substring(0, 100) : JSON.stringify(text)}`);
             });
         }
         
