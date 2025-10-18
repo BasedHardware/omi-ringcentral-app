@@ -11,6 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Initialize RingCentral SDK
+console.log('🔧 REDIRECT_URI configured as:', process.env.REDIRECT_URI);
 const rcsdk = new RingCentral({
   server: process.env.RINGCENTRAL_SERVER_URL,
   clientId: process.env.RINGCENTRAL_CLIENT_ID,
