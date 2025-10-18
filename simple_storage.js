@@ -1,10 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
-// Storage file paths
-const STORAGE_DIR = path.join(__dirname);
+// Storage file paths - use Railway volume if available, otherwise current directory
+const STORAGE_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH 
+    ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH)
+    : __dirname;
+
+// Ensure storage directory exists
+if (!fs.existsSync(STORAGE_DIR)) {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+}
+
 const USERS_FILE = path.join(STORAGE_DIR, 'users_data.json');
 const SESSIONS_FILE = path.join(STORAGE_DIR, 'sessions_data.json');
+
+console.log(`💾 Storage location: ${STORAGE_DIR}`);
 
 // In-memory storage
 let users = {};
