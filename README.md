@@ -1,144 +1,371 @@
-# RingCentral Message Sender
+# 💬 RingCentral Voice Messenger for OMI
 
-A web application that allows you to send RingCentral messages using natural language. Simply type commands like "Send ringcentral message to general channel hello everyone" and the app will parse your message using OpenAI and send it via RingCentral API.
+Voice-activated RingCentral messaging through your OMI device. Simply say "Send ring message to [chat]" followed by your message, and AI will automatically post it to the right RingCentral chat!
 
-## Features
+## ✨ Features
 
-- 🔐 OAuth authentication with RingCentral
-- 🤖 Natural language processing using OpenAI GPT-4
-- 💬 Send messages to RingCentral channels/chats
-- 📋 View available channels
-- ✨ Modern, responsive UI
+- **🎤 Voice-Activated** - Say "Send ring message" and speak naturally
+- **🧠 AI-Powered Chat Matching** - AI intelligently matches spoken names to your workspace chats
+- **🔐 OAuth Authentication** - Secure RingCentral OAuth 2.0 integration
+- **💬 Direct Messages** - Works with DMs, channels, and group chats
+- **⚙️ Flexible Settings** - Change settings anytime from mobile-first homepage
+- **🤖 Smart Message Extraction** - AI cleans up filler words and formats professionally
+- **🔕 Silent Collection** - Only notifies when message is sent
+- **📱 Mobile-First UI** - Beautiful responsive RingCentral-themed design
 
-## Prerequisites
+## 🚀 Quick Start
 
-- Node.js (v14 or higher)
-- RingCentral account with API access
+### For OMI Users
+
+1. **Install the app** in your OMI mobile app
+2. **Authenticate** your RingCentral workspace (one-time)
+3. **Start messaging!**
+   - Say: "Send ring message to general saying hello team!"
+   - Say: "Post ringcentral message to marketing that the campaign is live"
+   - Say: "Send ring message to John saying can we meet tomorrow"
+
+### Trigger Phrases (ONLY these 4)
+
+- **"Send ring message"** - "Send ring message to general saying..."
+- **"Send ringcentral message"** - "Send ringcentral message to marketing that..."
+- **"Post ring message"** - "Post ring message to support saying..."
+- **"Post ringcentral message"** - "Post ringcentral message in engineering..."
+
+### How It Works
+
+**The app intelligently processes your voice commands:**
+1. Detects trigger phrase → Starts collecting
+2. Collects up to 5 segments OR stops if 5+ second gap detected
+3. AI extracts:
+   - Chat name (fuzzy matches to your workspace chats)
+   - Message content (cleaned and formatted)
+4. Fetches fresh chat list automatically (new chats work immediately!)
+5. Posts message to RingCentral
+6. Notifies you with confirmation! 🎉
+
+**Example:**
+```
+You: "Send ring message to general saying hello team"
+     [collecting segment 1/5...]
+You: "hope everyone is having a great day"
+     [collecting segment 2/5...]
+     [5+ second pause - timeout!]
+     → AI processes 2 segments
+     
+AI Extracted:
+Chat: General
+Message: "Hello team, hope everyone is having a great day."
+
+     → Message sent! 🔔
+```
+
+## 🎯 OMI App Configuration
+
+| Field | Value |
+|-------|-------|
+| **Webhook URL** | `https://your-app.up.railway.app/webhook` |
+| **App Home URL** | `https://your-app.up.railway.app/` |
+| **Auth URL** | `https://your-app.up.railway.app/auth` |
+| **Setup Completed URL** | `https://your-app.up.railway.app/setup-completed` |
+
+## 🛠️ Development Setup
+
+### Prerequisites
+
+- Node.js (v18 or higher)
+- RingCentral account with admin access
 - OpenAI API key
+- OMI device and app
 
-## Setup
+### Installation
 
-1. **Install dependencies:**
+```bash
+# Navigate to the directory
+cd ringcentral
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+### Configuration
+
+Create `.env` file with:
+
+```env
+# RingCentral OAuth Credentials (from developers.ringcentral.com)
+RINGCENTRAL_CLIENT_ID=your_client_id
+RINGCENTRAL_CLIENT_SECRET=your_client_secret
+RINGCENTRAL_SERVER_URL=https://platform.ringcentral.com
+
+# OAuth Redirect URL
+REDIRECT_URI=http://localhost:3000/oauth/callback
+
+# OpenAI API Key (for AI chat matching & message extraction)
+OPENAI_API_KEY=your_openai_key
+
+# App Settings
+PORT=3000
+SESSION_SECRET=your-secret-key-change-this-in-production
+```
+
+### RingCentral App Setup
+
+1. Go to [RingCentral Developer Console](https://developers.ringcentral.com/console)
+2. Click "Create New App" → "REST API App"
+3. Enter app name and select platform
+4. Navigate to **OAuth Settings**
+5. Add scopes:
+   - `Team Messaging` - Read and write access
+   - `Glip` - For team messaging
+6. Set redirect URL: `http://localhost:3000/oauth/callback`
+7. Copy Client ID and Client Secret to `.env`
+
+### Run Locally
+
+```bash
+npm start
+```
+
+Visit `http://localhost:3000` to test!
+
+## ☁️ Railway Deployment
+
+### Quick Deploy
+
+1. **Push to GitHub**
    ```bash
-   npm install
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/yourusername/omi-ringcentral-app.git
+   git branch -M main
+   git push -u origin main
    ```
 
-2. **Configure environment variables:**
-   
-   The `.env` file is already configured with your credentials. Make sure it contains:
-   ```
-   RINGCENTRAL_CLIENT_ID=your_client_id
-   RINGCENTRAL_CLIENT_SECRET=your_client_secret
-   RINGCENTRAL_SERVER_URL=https://platform.ringcentral.com
-   OPENAI_API_KEY=your_openai_key
-   PORT=3000
-   REDIRECT_URI=http://localhost:3000/oauth/callback
-   SESSION_SECRET=your-secret-key-change-this-in-production
-   ```
+2. **Deploy on Railway**
+   - Go to [railway.app](https://railway.app)
+   - New Project → Deploy from GitHub
+   - Select your repo
+   - Add environment variables (from your `.env`)
 
-3. **Configure RingCentral OAuth Redirect URI:**
-   
-   In your RingCentral App settings, add the following redirect URI:
-   ```
-   http://localhost:3000/oauth/callback
-   ```
+3. **Create Volume for Persistent Storage**
+   - Settings → Volumes → New Volume
+   - Mount path: `/app/data`
+   - Size: 1GB
 
-## Running the Application
+4. **Get your URL**
+   - Settings → Networking → Generate Domain
+   - You'll get: `your-app.up.railway.app`
 
-1. **Start the server:**
-   ```bash
-   npm start
-   ```
-   
-   For development with auto-reload:
-   ```bash
-   npm run dev
-   ```
+5. **Update OAuth Redirect**
+   - Railway Variables: `REDIRECT_URI=https://your-app.up.railway.app/oauth/callback`
+   - RingCentral App: Update redirect URL to same
 
-2. **Open your browser:**
-   ```
-   http://localhost:3000
-   ```
+6. **Configure OMI**
+   - Use your Railway URLs in OMI app settings
 
-3. **Authenticate:**
-   - Click "Login with RingCentral"
-   - Authorize the application
-   - You'll be redirected back to the app
+### Railway Environment Variables
 
-4. **Send messages:**
-   - Type naturally: "Send ringcentral message to general channel hello team"
-   - The app will extract the channel name and message
-   - Click "Send Message"
+Add these in Railway dashboard:
 
-## Usage Examples
+```
+RINGCENTRAL_CLIENT_ID
+RINGCENTRAL_CLIENT_SECRET
+RINGCENTRAL_SERVER_URL=https://platform.ringcentral.com
+OPENAI_API_KEY
+REDIRECT_URI=https://your-app.up.railway.app/oauth/callback
+PORT=3000
+SESSION_SECRET=<generate-random-secret>
+```
 
-Here are some natural language examples you can use:
+## 🧪 Testing
 
-- `Send ringcentral message to general channel hello everyone`
-- `Send to engineering team we have a bug in production`
-- `Message support channel customer needs help with their account`
-- `Send to marketing team new campaign is ready to launch`
+### Web Interface
 
-## How It Works
+Visit `https://your-app.up.railway.app/test?dev=true` to:
+- Authenticate your RingCentral workspace
+- Test voice commands by typing
+- See real-time logs
+- Verify messages are posting
 
-1. **Natural Language Parsing**: Your input is sent to OpenAI GPT-4, which extracts:
-   - Channel/team name
-   - Message content
+### With OMI Device
 
-2. **Channel Lookup**: The app searches your RingCentral chats for a matching channel name
+1. Configure webhook URLs in OMI Developer Settings
+2. Enable the integration
+3. Authenticate RingCentral
+4. Say: "Send ring message to general saying hello team!"
+5. Wait for AI processing (silent)
+6. Get notification with confirmation! 🎉
 
-3. **Message Sending**: The message is sent to the identified channel via RingCentral API
+## 🧠 AI Processing
 
-## API Endpoints
+The app uses OpenAI for intelligent processing:
 
-- `GET /` - Main application page
-- `GET /api/auth-status` - Check authentication status
-- `GET /oauth/login` - Initiate OAuth login
-- `GET /oauth/callback` - OAuth callback handler
-- `GET /oauth/logout` - Logout endpoint
-- `GET /api/chats` - Get available chats/channels
-- `POST /api/send-message` - Parse and send message
+1. **Chat Matching** - Fuzzy matches spoken chat names to workspace chats
+2. **Message Extraction** - Extracts clean message content from voice segments
+3. **Cleanup** - Removes filler words, fixes grammar, proper formatting
 
-## Project Structure
+**Example Transformation:**
+
+```
+Input (3 segments):
+"to general saying um hello team hope you're all um doing great today"
+
+AI Output:
+Chat: General (matched from "general")
+Message: "Hello team, hope you're all doing great today"
+```
+
+## 📊 How Segments Work
+
+**OMI sends transcripts in segments** as you speak. The app:
+- ✅ Detects trigger phrase (Send ring message / Send ringcentral message / Post ring message / Post ringcentral message)
+- ✅ Collects up to 5 segments MAX
+- ✅ Processes early if 5+ second gap detected (minimum 2 segments)
+- ✅ Silent during collection (no spam)
+- ✅ AI processes all collected segments together
+- ✅ One notification on completion
+
+**Smart Collection:**
+- **Max segments:** 5 (including trigger)
+- **Timeout:** 5 seconds of silence → processes immediately
+- **Minimum:** 2 segments (trigger + content)
+- **Duration:** ~5-20 seconds depending on speech
+- **Auto-refresh:** Fetches latest chats every time (new chats work immediately!)
+
+## 📱 Chat Management
+
+### Direct Messages
+
+AI automatically detects person names and sends DMs:
+- "Send ring message to John saying can we meet tomorrow"
+- "Message Sarah that the report is ready"
+
+### Channels & Group Chats
+
+Works with all RingCentral chat types:
+- Public channels: "Send to general saying..."
+- Private channels: "Message engineering team..."
+- Group chats: "Send to project alpha group..."
+
+### Auto-Refresh
+
+The app **automatically fetches fresh chats** every time you send a message, so new chats work immediately without manual refresh!
+
+You can also manually refresh:
+- Click "Refresh Connection" button on homepage
+- Or re-authenticate to get latest chats
+
+## 🔐 Security & Privacy
+
+- ✅ OAuth 2.0 authentication (no password storage)
+- ✅ Tokens stored securely with file persistence
+- ✅ Per-user token isolation
+- ✅ HTTPS enforced in production
+- ✅ State parameter for CSRF protection
+- ✅ Secure scopes: minimal required permissions
+
+## 🐛 Troubleshooting
+
+### "User not authenticated"
+- Complete RingCentral OAuth flow
+- Check Railway logs for auth errors
+- Re-authenticate if needed
+
+### "No chat specified"
+- Say the chat/person name clearly
+- Use "Refresh Connection" to see available names
+- Check pronunciation
+
+### "Message not sending"
+- Check Railway logs for errors
+- Verify chat exists and you have access
+- Ensure RingCentral app has correct scopes
+- Check RingCentral API rate limits
+
+### "ngrok not working" (local dev)
+- Make sure ngrok is running
+- Check if URL changed after restart
+- Update OMI app URLs with new ngrok URL
+
+### "Railway deployment fails"
+- Verify all environment variables are set
+- Check build logs for specific errors
+- Ensure `REDIRECT_URI` matches RingCentral app
+
+## 📁 Project Structure
 
 ```
 ringcentral/
-├── server.js           # Express server with RingCentral & OpenAI integration
-├── package.json        # Dependencies
-├── .env               # Environment variables (not in git)
-├── .gitignore         # Git ignore file
-├── README.md          # This file
-└── public/            # Frontend files
-    ├── index.html     # Main HTML page
-    ├── style.css      # Styles
-    └── app.js         # Frontend JavaScript
+├── server.js                   # Express server with RingCentral & OpenAI
+├── message_detector.js         # AI-powered message & chat detection
+├── simple_storage.js           # File-based storage (users & sessions)
+├── package.json                # Node.js dependencies
+├── railway.toml               # Railway deployment config
+├── Procfile                   # Alternative deployment platforms
+├── .env.example               # Environment template
+├── .gitignore                 # Git ignore rules
+├── .railwayignore             # Railway ignore rules
+├── LICENSE                    # MIT License
+├── README.md                  # This file
+└── public/                    # Frontend files
+    ├── index.html             # Main homepage
+    ├── home.js                # Homepage logic
+    ├── debug.html             # Debug interface
+    ├── app.js                 # Debug interface logic
+    └── style.css              # Unified styles
 ```
 
-## Security Notes
+## 🔧 API Endpoints
 
-- Never commit `.env` file to version control
-- In production, use HTTPS and set `cookie.secure: true` in session configuration
-- Change `SESSION_SECRET` to a strong random value
-- Consider using environment-specific redirect URIs
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Homepage with settings (mobile-first) |
+| `/auth` | GET | Start RingCentral OAuth flow |
+| `/oauth/callback` | GET | OAuth callback handler |
+| `/setup-completed` | GET | Check if user authenticated |
+| `/webhook` | POST | Real-time transcript processor |
+| `/refresh-chats` | POST | Refresh chat list |
+| `/logout` | POST | Logout and clear data |
+| `/test` | GET | Web testing interface |
+| `/health` | GET | Health check |
 
-## Troubleshooting
+## 🤝 Contributing
 
-**Authentication Issues:**
-- Verify your RingCentral credentials in `.env`
-- Check that the redirect URI matches in RingCentral app settings
-- Ensure you have the necessary permissions in RingCentral
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open a Pull Request
 
-**Message Sending Issues:**
-- Make sure you're authenticated
-- Verify the channel name exists (use "Load My Channels" button)
-- Check that you have permission to post in the channel
+## 📝 License
 
-**OpenAI Parsing Issues:**
-- Be clear about the channel name in your message
-- Follow the example formats provided
-- Check your OpenAI API key is valid
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## License
+## 🆘 Support
 
-MIT
+- **OMI Docs**: [docs.omi.me](https://docs.omi.me)
+- **RingCentral API**: [developers.ringcentral.com](https://developers.ringcentral.com)
 
+## 🎉 Credits
+
+Built for the [OMI](https://omi.me) ecosystem.
+
+- **OMI Team** - Amazing wearable AI platform
+- **RingCentral** - Team communication platform
+- **OpenAI** - Intelligent text processing
+
+---
+
+**Made with ❤️ for voice-first team communication**
+
+**Features:**
+- 🎤 Voice-activated RingCentral messaging
+- 🧠 AI-powered chat matching
+- 📱 Mobile-first workspace management
+- 🔐 Secure RingCentral OAuth integration
+- ⚡ Real-time processing with Railway deployment

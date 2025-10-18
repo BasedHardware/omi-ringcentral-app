@@ -4,6 +4,7 @@ users_data.json
 sessions_data.json
 .git/
 .gitignore
-*.md
 .DS_Store
+venv/
+__pycache__/
 

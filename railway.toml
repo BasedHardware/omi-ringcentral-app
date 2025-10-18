@@ -1,0 +1,7 @@
+[deploy]
+startCommand = "node server.js"
+
+# Persistent storage for user tokens and sessions
+[[deploy.volumes]]
+mountPath = "/app/data"
+
