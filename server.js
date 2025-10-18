@@ -175,18 +175,8 @@ function startTimeoutMonitor() {
                                 // Handle task creation
                                 console.log(`⏰ Creating task (timeout)...`);
                                 
-                                // Fetch team members
-                                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
-                                const membersData = await membersResponse.json();
-                                const members = membersData.records || [];
-                                
-                                // Add displayName for easier matching
-                                const enrichedMembers = members.map(m => ({
-                                    id: m.id,
-                                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                                    email: m.email
-                                }));
+                                // Fetch team members (using same method as message matching for consistency)
+                                const enrichedMembers = await getEnrichedTeamMembers(platform);
                                 
                                 // AI extracts task details
                                 const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
@@ -252,6 +242,57 @@ function startTimeoutMonitor() {
             console.error(`❌ Timeout monitor error: ${error}`);
         }
     }, 1000); // Check every second
+}
+
+// Helper function to fetch and enrich team members (same as chat enrichment for consistency)
+async function getEnrichedTeamMembers(platform) {
+    const chatsResponse = await platform.get('/team-messaging/v1/chats');
+    const chatsData = await chatsResponse.json();
+    const chats = chatsData.records || [];
+    
+    // Extract unique members from all chats and enrich with names
+    const memberIds = new Set();
+    const enrichedMembers = [];
+    
+    for (const chat of chats) {
+        if (chat.members) {
+            for (const member of chat.members) {
+                const memberId = member.id.toString();
+                
+                // Skip bot/system accounts and already processed members
+                if (memberId.startsWith('glip-') || memberIds.has(memberId)) {
+                    continue;
+                }
+                
+                try {
+                    // Fetch member details
+                    const userResponse = await platform.get(`/team-messaging/v1/persons/${memberId}`);
+                    const userData = await userResponse.json();
+                    
+                    const displayName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || userData.email || null;
+                    if (displayName) {
+                        enrichedMembers.push({
+                            id: memberId,
+                            name: displayName,
+                            displayName: displayName,
+                            email: userData.email,
+                            firstName: userData.firstName,
+                            lastName: userData.lastName
+                        });
+                        memberIds.add(memberId);
+                    }
+                } catch (err) {
+                    // Skip members we can't fetch
+                    if (!err.message.includes('404')) {
+                        console.log(`⚠️  Could not fetch member ${memberId}: ${err.message}`);
+                    }
+                }
+            }
+        }
+    }
+    
+    console.log(`✓ Found ${enrichedMembers.length} team members`);
+    return enrichedMembers;
 }
 
 // Helper function to create task in RingCentral
@@ -600,18 +641,8 @@ async function processSegments(session, segments, user) {
                 // Handle task creation
                 console.log(`📋 Creating task...`);
                 
-                // Fetch team members
-                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
-                const membersData = await membersResponse.json();
-                const members = membersData.records || [];
-                
-                // Add displayName for easier matching
-                const enrichedMembers = members.map(m => ({
-                    id: m.id,
-                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                    email: m.email
-                }));
+                // Fetch team members (using same method as message matching for consistency)
+                const enrichedMembers = await getEnrichedTeamMembers(platform);
                 
                 // AI extracts task details
                 const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
@@ -728,18 +759,8 @@ async function processSegments(session, segments, user) {
                 // Handle task creation
                 console.log(`📋 Creating task from accumulated segments...`);
                 
-                // Fetch team members
-                const membersResponse = await platform.get('/restapi/v1.0/account/~/directory/entries?type=User');
-                const membersData = await membersResponse.json();
-                const members = membersData.records || [];
-                
-                // Add displayName for easier matching
-                const enrichedMembers = members.map(m => ({
-                    id: m.id,
-                    name: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                    displayName: `${m.firstName || ''} ${m.lastName || ''}`.trim(),
-                    email: m.email
-                }));
+                // Fetch team members (using same method as message matching for consistency)
+                const enrichedMembers = await getEnrichedTeamMembers(platform);
                 
                 // AI extracts task details
                 const { title, assigneeId, assigneeName, dueDate, dueTime } = await messageDetector.aiExtractTaskDetails(
