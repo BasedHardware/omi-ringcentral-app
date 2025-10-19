@@ -1279,6 +1279,252 @@ app.post('/api/send-message', async (req, res) => {
     }
 });
 
+// API endpoint to create task (for external apps)
+app.post('/api/create-task', async (req, res) => {
+    try {
+        const uid = req.query.uid || req.body.uid;
+        if (!uid) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Missing uid parameter. Include in query string or request body.' 
+            });
+        }
+        
+        const user = SimpleUserStorage.getUser(uid);
+        if (!user || !user.tokens) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'User not authenticated. Please authenticate with RingCentral first.' 
+            });
+        }
+        
+        const { title, dueDate, dueTime, assigneeName } = req.body;
+        
+        if (!title || title.trim().length < 3) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Task title is required and must be at least 3 characters.' 
+            });
+        }
+        
+        console.log(`📋 API: Creating task "${title}" ${assigneeName ? `for ${assigneeName}` : ''}`);
+        
+        const platform = rcsdk.platform();
+        await platform.auth().setData(user.tokens);
+        
+        // Fetch team members for assignee matching
+        const enrichedMembers = await getEnrichedTeamMembers(platform);
+        
+        // Match assignee by name (fuzzy matching)
+        let assigneeId = null;
+        let matchedAssigneeName = assigneeName;
+        
+        if (assigneeName) {
+            // Try exact match first
+            for (const member of enrichedMembers) {
+                const memberName = member.displayName || member.name || member.email;
+                if (memberName && memberName.toLowerCase() === assigneeName.toLowerCase()) {
+                    assigneeId = member.id;
+                    matchedAssigneeName = memberName;
+                    console.log(`✅ Exact match: ${assigneeName} → ${memberName}`);
+                    break;
+                }
+            }
+            
+            // Try fuzzy match if no exact match
+            if (!assigneeId) {
+                for (const member of enrichedMembers) {
+                    const memberName = member.displayName || member.name || member.email;
+                    if (memberName && (
+                        memberName.toLowerCase().includes(assigneeName.toLowerCase()) ||
+                        assigneeName.toLowerCase().includes(memberName.toLowerCase())
+                    )) {
+                        assigneeId = member.id;
+                        matchedAssigneeName = memberName;
+                        console.log(`🔍 Fuzzy match: ${assigneeName} → ${memberName}`);
+                        break;
+                    }
+                }
+            }
+            
+            if (!assigneeId) {
+                console.log(`⚠️  No match found for assignee: ${assigneeName}`);
+            }
+        }
+        
+        // Get user settings for timezone
+        const userSettings = SimpleUserStorage.getUserSettings(uid);
+        
+        // Create task
+        const result = await createRingCentralTask(
+            platform, 
+            title, 
+            assigneeId, 
+            matchedAssigneeName, 
+            dueDate, 
+            dueTime, 
+            userSettings.timezone
+        );
+        
+        console.log(`✅ Task created successfully: ${title}`);
+        
+        // Send OMI notification
+        const dueInfo = dueDate ? ` (due ${dueDate}${dueTime ? ` at ${dueTime}` : ''})` : '';
+        const notificationMsg = `✅ Task created: ${title}${matchedAssigneeName ? ` for ${matchedAssigneeName}` : ''}${dueInfo}`;
+        try {
+            await sendOmiNotification(uid, notificationMsg);
+        } catch (notifError) {
+            console.log(`⚠️  Notification failed but task was created: ${notifError.message}`);
+        }
+        
+        res.json({ 
+            success: true,
+            task: {
+                title: title,
+                assignee: matchedAssigneeName,
+                assigneeMatched: !!assigneeId,
+                dueDate: dueDate,
+                dueTime: dueTime,
+                timezone: userSettings.timezone
+            },
+            message: notificationMsg
+        });
+        
+    } catch (error) {
+        console.error('API /api/create-task error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Failed to create task' 
+        });
+    }
+});
+
+// API endpoint to send detailed message to chat (for external apps)
+app.post('/api/send-chat-message', async (req, res) => {
+    try {
+        const uid = req.query.uid || req.body.uid;
+        if (!uid) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Missing uid parameter. Include in query string or request body.' 
+            });
+        }
+        
+        const user = SimpleUserStorage.getUser(uid);
+        if (!user || !user.tokens) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'User not authenticated. Please authenticate with RingCentral first.' 
+            });
+        }
+        
+        const { message, chatName } = req.body;
+        
+        if (!message || message.trim().length < 1) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Message text is required.' 
+            });
+        }
+        
+        if (!chatName) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Chat name is required. Specify which chat to send the message to.' 
+            });
+        }
+        
+        console.log(`💬 API: Sending message to "${chatName}"`);
+        
+        const platform = rcsdk.platform();
+        await platform.auth().setData(user.tokens);
+        
+        // Fetch fresh chats
+        const chatsResponse = await platform.get('/team-messaging/v1/chats');
+        const chatsData = await chatsResponse.json();
+        let chats = chatsData.records || chatsData || [];
+        
+        // Enrich chats with member names for DMs
+        console.log(`🔄 Enriching chats for message sending...`);
+        chats = await enrichChatsWithMemberNames(platform, chats);
+        
+        // Find chat by name (fuzzy matching)
+        let chatId = null;
+        let matchedChatName = null;
+        
+        // Try exact match first
+        for (const chat of chats) {
+            const displayName = chat.displayName || chat.name || chat.description;
+            if (displayName && displayName.toLowerCase() === chatName.toLowerCase()) {
+                chatId = chat.id;
+                matchedChatName = displayName;
+                console.log(`✅ Exact match: ${chatName} → ${displayName}`);
+                break;
+            }
+        }
+        
+        // Try fuzzy match if no exact match
+        if (!chatId) {
+            for (const chat of chats) {
+                const displayName = chat.displayName || chat.name || chat.description;
+                if (displayName && (
+                    displayName.toLowerCase().includes(chatName.toLowerCase()) ||
+                    chatName.toLowerCase().includes(displayName.toLowerCase())
+                )) {
+                    chatId = chat.id;
+                    matchedChatName = displayName;
+                    console.log(`🔍 Fuzzy match: ${chatName} → ${displayName}`);
+                    break;
+                }
+            }
+        }
+        
+        if (!chatId) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Chat not found: ${chatName}`,
+                availableChats: chats.map(c => ({
+                    name: c.displayName || c.name || c.description,
+                    type: c.type,
+                    id: c.id
+                })).slice(0, 20)
+            });
+        }
+        
+        // Send the message
+        await platform.post(`/team-messaging/v1/chats/${chatId}/posts`, { 
+            text: message 
+        });
+        
+        console.log(`✅ Message sent to ${matchedChatName}`);
+        
+        // Send OMI notification
+        const notificationMsg = `✅ Message sent to ${matchedChatName}`;
+        try {
+            await sendOmiNotification(uid, notificationMsg);
+        } catch (notifError) {
+            console.log(`⚠️  Notification failed but message was sent: ${notifError.message}`);
+        }
+        
+        res.json({ 
+            success: true,
+            chat: {
+                name: matchedChatName,
+                id: chatId
+            },
+            message: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+            notification: notificationMsg
+        });
+        
+    } catch (error) {
+        console.error('API /api/send-chat-message error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Failed to send message' 
+        });
+    }
+});
+
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: "healthy", service: "omi-ringcentral-integration" });

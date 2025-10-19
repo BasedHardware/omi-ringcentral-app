@@ -83,14 +83,14 @@ Message: "Hello team, hope everyone is having a great day."
 
 | Field | Value |
 |-------|-------|
-| **Webhook URL** | `https://your-app.up.railway.app/webhook` |
-| **App Home URL** | `https://your-app.up.railway.app/` ← **Settings are here!** |
-| **Auth URL** | `https://your-app.up.railway.app/auth` |
-| **Setup Completed URL** | `https://your-app.up.railway.app/setup-completed` |
+| **Webhook URL** | `https://omi-ringcentral.up.railway.app/webhook` |
+| **App Home URL** | `https://omi-ringcentral.up.railway.app/` ← **Settings are here!** |
+| **Auth URL** | `https://omi-ringcentral.up.railway.app/auth` |
+| **Setup Completed URL** | `https://omi-ringcentral.up.railway.app/setup-completed` |
 
 **Accessing Settings:**
 - From OMI app: Tap the integration → Opens homepage with settings automatically
-- Direct link: `https://your-app.up.railway.app/?uid=YOUR_USER_ID`
+- Direct link: `https://omi-ringcentral.up.railway.app/?uid=YOUR_USER_ID`
 - Settings include: Timezone selector, Chat refresh, Logout
 
 ## 🛠️ Development Setup
@@ -198,10 +198,10 @@ Visit `http://localhost:3000` to test!
 
 4. **Get your URL**
    - Settings → Networking → Generate Domain
-   - You'll get: `your-app.up.railway.app`
+   - You'll get: `omi-ringcentral.up.railway.app`
 
 5. **Update OAuth Redirect**
-   - Railway Variables: `REDIRECT_URI=https://your-app.up.railway.app/oauth/callback`
+   - Railway Variables: `REDIRECT_URI=https://omi-ringcentral.up.railway.app/oauth/callback`
    - RingCentral App: Update redirect URL to same
 
 6. **Configure OMI**
@@ -216,7 +216,7 @@ RINGCENTRAL_CLIENT_ID
 RINGCENTRAL_CLIENT_SECRET
 RINGCENTRAL_SERVER_URL=https://platform.ringcentral.com
 OPENAI_API_KEY
-REDIRECT_URI=https://your-app.up.railway.app/oauth/callback
+REDIRECT_URI=https://omi-ringcentral.up.railway.app/oauth/callback
 PORT=3000
 SESSION_SECRET=<generate-random-secret>
 ```
@@ -225,7 +225,7 @@ SESSION_SECRET=<generate-random-secret>
 
 ### Web Interface
 
-Visit `https://your-app.up.railway.app/test?dev=true` to:
+Visit `https://omi-ringcentral.up.railway.app/test?dev=true` to:
 - Authenticate your RingCentral workspace
 - Test voice commands by typing
 - See real-time logs
@@ -448,6 +448,91 @@ ringcentral/
 | `/logout` | POST | Logout and clear data |
 | `/test` | GET | Web testing interface |
 | `/health` | GET | Health check |
+| `/api/create-task` | POST | **[NEW]** Create task (for external apps) |
+| `/api/send-chat-message` | POST | **[NEW]** Send message to chat (for external apps) |
+
+### External API Endpoints
+
+These endpoints can be called from other applications to interact with RingCentral on behalf of authenticated users.
+
+#### POST `/api/create-task`
+
+Creates a task in RingCentral with automatic assignee matching.
+
+**Request:**
+```bash
+POST https://omi-ringcentral.up.railway.app/api/create-task?uid=USER_ID
+Content-Type: application/json
+
+{
+  "title": "Review quarterly report",
+  "assigneeName": "Sarah Lopez",  // Optional - fuzzy matched to team members
+  "dueDate": "2025-10-25",        // Optional - YYYY-MM-DD format
+  "dueTime": "15:00"              // Optional - HH:MM format (24-hour)
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "task": {
+    "title": "Review quarterly report",
+    "assignee": "Sarah Lopez",
+    "assigneeMatched": true,
+    "dueDate": "2025-10-25",
+    "dueTime": "15:00",
+    "timezone": "America/Los_Angeles"
+  },
+  "message": "✅ Task created: Review quarterly report for Sarah Lopez (due 2025-10-25 at 15:00)"
+}
+```
+
+**Features:**
+- ✅ Fuzzy matching for assignee names
+- ✅ Timezone-aware date/time handling
+- ✅ Sends OMI notification to user
+- ✅ Works with user's RingCentral account
+
+#### POST `/api/send-chat-message`
+
+Sends a detailed message (markdown supported) to a specific RingCentral chat.
+
+**Request:**
+```bash
+POST https://omi-ringcentral.up.railway.app/api/send-chat-message?uid=USER_ID
+Content-Type: application/json
+
+{
+  "chatName": "General",          // Required - fuzzy matched to available chats
+  "message": "## Meeting Summary\n\n- Discussed Q4 goals\n- Action items assigned\n- Next meeting: Friday"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "chat": {
+    "name": "General",
+    "id": "1234567890"
+  },
+  "message": "## Meeting Summary\n\n- Discussed Q4 goals...",
+  "notification": "✅ Message sent to General"
+}
+```
+
+**Features:**
+- ✅ Fuzzy matching for chat names
+- ✅ Supports markdown formatting
+- ✅ Works with DMs, channels, and group chats
+- ✅ Returns list of available chats if name not found
+- ✅ Sends OMI notification to user
+
+**Authentication:**
+- All endpoints require `uid` parameter (query string or request body)
+- User must be authenticated with RingCentral first
+- Returns 401 if user not authenticated
 
 ## 🤝 Contributing
 
