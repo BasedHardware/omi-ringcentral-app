@@ -220,7 +220,36 @@ function startTimeoutMonitor() {
                             const platform = rcsdk.platform();
                             await platform.auth().setData(user.tokens);
                             
-                            if (triggerType === 'task') {
+                            if (triggerType === 'event') {
+                                // Handle event creation
+                                console.log(`⏰ Creating event (timeout)...`);
+                                
+                                // AI extracts event details
+                                const { name, startDate, startTime, duration, notes } = await messageDetector.aiExtractEventDetails(accumulated);
+                                
+                                if (name && name.trim().length >= 3) {
+                                    console.log(`⏰ Creating event: "${name}" on ${startDate || 'TBD'} at ${startTime || 'TBD'}`);
+                                    
+                                    try {
+                                        const userSettings = SimpleUserStorage.getUserSettings(uid);
+                                        await createRingCentralEvent(platform, name, startDate, startTime, duration, notes, userSettings.timezone);
+                                        console.log(`⏰ SUCCESS! Event created via timeout: ${name}`);
+                                        
+                                        // Send OMI notification to user's mobile app
+                                        const eventInfo = startDate ? ` on ${startDate}${startTime ? ` at ${startTime}` : ''}` : '';
+                                        const notificationMsg = `✅ Event created: ${name}${eventInfo}`;
+                                        try {
+                                            await sendOmiNotification(uid, notificationMsg);
+                                        } catch (notifError) {
+                                            console.log(`⚠️  Notification failed but event was created: ${notifError.message}`);
+                                        }
+                                    } catch (error) {
+                                        console.error(`⏰ Failed to create event: ${error.message}`);
+                                    }
+                                } else {
+                                    console.log(`⏰ Insufficient content for event (name: '${name ? name.substring(0, 50) : 'None'}...')`);
+                                }
+                            } else if (triggerType === 'task') {
                                 // Handle task creation
                                 console.log(`⏰ Creating task (timeout)...`);
                                 
@@ -398,6 +427,74 @@ function convertToUserTimezone(dueDate, dueTime, userTimezone) {
     
     // Return in ISO format with Z
     return utcDate.toISOString();
+}
+
+// Helper function to create calendar event in RingCentral
+async function createRingCentralEvent(platform, eventName, startDate, startTime, duration, notes, userTimezone = 'America/Los_Angeles') {
+    // Build event start time in UTC
+    let startDateTime = null;
+    
+    if (startDate && startTime) {
+        // Convert to user's timezone then to UTC
+        const dateTimeStr = `${startDate}T${startTime}:00`;
+        startDateTime = convertToUserTimezone(startDate, startTime, userTimezone);
+    } else if (startDate) {
+        // No time specified, default to 9 AM
+        startDateTime = convertToUserTimezone(startDate, '09:00', userTimezone);
+    } else {
+        // No date or time, default to tomorrow at 9 AM
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        startDateTime = convertToUserTimezone(tomorrowStr, '09:00', userTimezone);
+    }
+    
+    // Calculate end time based on duration (in minutes)
+    const startDateObj = new Date(startDateTime);
+    const endDateObj = new Date(startDateObj.getTime() + (duration * 60 * 1000));
+    const endDateTime = endDateObj.toISOString();
+    
+    console.log(`✓ Creating calendar event: ${eventName}`);
+    console.log(`✓ Start: ${startDateTime} (${duration} minutes)`);
+    
+    // Get or create personal chat for the event
+    const chatsResponse = await platform.get('/team-messaging/v1/chats?type=Personal');
+    const chatsData = await chatsResponse.json();
+    let personalChats = chatsData.records || [];
+    
+    let groupId = null;
+    if (personalChats.length > 0) {
+        groupId = personalChats[0].id;
+        console.log(`✓ Using personal chat ${groupId} for event`);
+    } else {
+        // Create personal chat
+        const createChatResponse = await platform.post('/team-messaging/v1/chats', {
+            type: 'Personal'
+        });
+        const newChat = await createChatResponse.json();
+        groupId = newChat.id;
+        console.log(`✓ Created personal chat ${groupId}`);
+    }
+    
+    // Build event attachment
+    const eventAttachment = {
+        type: 'Event',
+        title: eventName,
+        startTime: startDateTime,
+        endTime: endDateTime,
+        color: 'Blue'
+    };
+    
+    if (notes) {
+        eventAttachment.description = notes;
+    }
+    
+    // Create calendar event using Glip API (event as attachment to group)
+    const response = await platform.post(`/restapi/v1.0/glip/groups/${groupId}/posts`, {
+        attachments: [eventAttachment]
+    });
+    
+    return await response.json();
 }
 
 // Helper function to create task in RingCentral
@@ -773,7 +870,44 @@ async function processSegments(session, segments, user) {
             const platform = rcsdk.platform();
             await platform.auth().setData(user.tokens);
             
-            if (triggerType === 'task') {
+            if (triggerType === 'event') {
+                // Handle event creation
+                console.log(`📅 Creating event...`);
+                
+                // AI extracts event details
+                const { name, startDate, startTime, duration, notes } = await messageDetector.aiExtractEventDetails(content);
+                
+                if (!name || name.trim().length < 3) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    return "❌ No valid event name found";
+                }
+                
+                console.log(`📤 Creating event: "${name}" on ${startDate || 'TBD'} at ${startTime || 'TBD'}`);
+                
+                try {
+                    const uid = session.uid;
+                    const userSettings = SimpleUserStorage.getUserSettings(uid);
+                    await createRingCentralEvent(platform, name, startDate, startTime, duration, notes, userSettings.timezone);
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Event created: ${name}`);
+                    const eventInfo = startDate ? ` on ${startDate}${startTime ? ` at ${startTime}` : ''}` : '';
+                    const notificationMsg = `✅ Event created: ${name}${eventInfo}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but event was created: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed to create event: ${error.message}`;
+                }
+            } else if (triggerType === 'task') {
                 // Handle task creation
                 console.log(`📋 Creating task...`);
                 
@@ -912,7 +1046,45 @@ async function processSegments(session, segments, user) {
             const platform = rcsdk.platform();
             await platform.auth().setData(user.tokens);
             
-            if (triggerType === 'task') {
+            if (triggerType === 'event') {
+                // Handle event creation
+                console.log(`📅 Creating event from accumulated segments...`);
+                
+                // AI extracts event details
+                const { name, startDate, startTime, duration, notes } = await messageDetector.aiExtractEventDetails(accumulated);
+                
+                if (!name || name.trim().length < 3) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`⚠️  No valid event name found`);
+                    return "❌ No valid event name found";
+                }
+                
+                console.log(`📤 Creating event: "${name}" on ${startDate || 'TBD'} at ${startTime || 'TBD'}`);
+                
+                try {
+                    const uid = session.uid;
+                    const userSettings = SimpleUserStorage.getUserSettings(uid);
+                    await createRingCentralEvent(platform, name, startDate, startTime, duration, notes, userSettings.timezone);
+                    
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.log(`🎉 SUCCESS! Event created: ${name}`);
+                    const eventInfo = startDate ? ` on ${startDate}${startTime ? ` at ${startTime}` : ''}` : '';
+                    const notificationMsg = `✅ Event created: ${name}${eventInfo}`;
+                    
+                    // Send OMI notification to user's mobile app
+                    try {
+                        await sendOmiNotification(uid, notificationMsg);
+                    } catch (notifError) {
+                        console.log(`⚠️  Notification failed but event was created: ${notifError.message}`);
+                    }
+                    
+                    return notificationMsg;
+                } catch (error) {
+                    SimpleSessionStorage.resetSession(sessionId);
+                    console.error(`❌ FAILED: ${error.message}`);
+                    return `❌ Failed to create event: ${error.message}`;
+                }
+            } else if (triggerType === 'task') {
                 // Handle task creation
                 console.log(`📋 Creating task from accumulated segments...`);
                 
@@ -1327,6 +1499,24 @@ function getAuthenticatedHTML(uid, chats) {
                     <span class="stat">Smart date & time parsing</span>
                 </div>
             </div>
+
+            <div class="feature-card events">
+                <div class="feature-icon">📅</div>
+                <h3>Create Events</h3>
+                <p class="feature-desc">Schedule calendar events with voice commands</p>
+                <div class="examples">
+                    <div class="example-item">
+                        <span class="example-label">Try saying:</span>
+                        <code>"Add ring event team meeting tomorrow at 2pm"</code>
+                    </div>
+                    <div class="example-item">
+                        <code>"Schedule ring event client presentation on Friday at 10am for 90 minutes"</code>
+                    </div>
+                </div>
+                <div class="feature-stats">
+                    <span class="stat">Auto-syncs to RingCentral calendar</span>
+                </div>
+            </div>
         </div>
 
         <div class="settings-card">
@@ -1506,14 +1696,31 @@ function getTestHTML(uid) {
 
         <div class="card">
             <h3>Quick Examples (Click to use)</h3>
+            <h4 style="margin-top: 0; color: #ff7700; font-size: 16px;">💬 Messages:</h4>
             <div class="example" onclick="useExample(this)">
                 Send ring message to general saying hello team, great work on the project!
             </div>
             <div class="example" onclick="useExample(this)">
                 Send ringcentral message to marketing that the new campaign is now live!
             </div>
+            
+            <h4 style="margin-top: 20px; color: #ff7700; font-size: 16px;">📋 Tasks:</h4>
             <div class="example" onclick="useExample(this)">
-                Post ring message to support saying customer inquiry needs attention
+                Create ring task for Lopez due tomorrow at 3pm review the quarterly report
+            </div>
+            <div class="example" onclick="useExample(this)">
+                Add ring task finish the client presentation by Friday
+            </div>
+            
+            <h4 style="margin-top: 20px; color: #ff7700; font-size: 16px;">📅 Events:</h4>
+            <div class="example" onclick="useExample(this)">
+                Add ring event team meeting tomorrow at 2pm
+            </div>
+            <div class="example" onclick="useExample(this)">
+                Schedule ring event client presentation on Friday at 10am for 90 minutes about quarterly results
+            </div>
+            <div class="example" onclick="useExample(this)">
+                Create ring event lunch with Sarah next Monday at noon
             </div>
         </div>
 
@@ -1759,6 +1966,10 @@ function getModernCSS() {
         
         .feature-card.tasks {
             border-top: 4px solid #8b5cf6;
+        }
+        
+        .feature-card.events {
+            border-top: 4px solid #10b981;
         }
         
         .feature-icon {

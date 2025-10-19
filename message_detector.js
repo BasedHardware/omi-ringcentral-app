@@ -17,6 +17,17 @@ class MessageDetector {
         "make ringcentral task"
     ];
 
+    static EVENT_TRIGGER_PHRASES = [
+        "create ring event",
+        "create ringcentral event",
+        "add ring event",
+        "add ringcentral event",
+        "schedule ring event",
+        "schedule ringcentral event",
+        "add ring calendar event",
+        "add ringcentral calendar event"
+    ];
+
     constructor(apiKey) {
         this.openai = new OpenAI({ apiKey });
     }
@@ -24,11 +35,15 @@ class MessageDetector {
     detectTrigger(text) {
         const normalized = text.toLowerCase().trim();
         return MessageDetector.MESSAGE_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger)) ||
-               MessageDetector.TASK_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger));
+               MessageDetector.TASK_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger)) ||
+               MessageDetector.EVENT_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger));
     }
 
     detectTriggerType(text) {
         const normalized = text.toLowerCase().trim();
+        if (MessageDetector.EVENT_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger))) {
+            return 'event';
+        }
         if (MessageDetector.TASK_TRIGGER_PHRASES.some(trigger => normalized.includes(trigger))) {
             return 'task';
         }
@@ -45,7 +60,7 @@ class MessageDetector {
         let triggerIndex = -1;
         let matchedTrigger = null;
         
-        const allTriggers = [...MessageDetector.MESSAGE_TRIGGER_PHRASES, ...MessageDetector.TASK_TRIGGER_PHRASES];
+        const allTriggers = [...MessageDetector.MESSAGE_TRIGGER_PHRASES, ...MessageDetector.TASK_TRIGGER_PHRASES, ...MessageDetector.EVENT_TRIGGER_PHRASES];
         
         for (const trigger of allTriggers) {
             const idx = normalized.indexOf(trigger);
@@ -364,6 +379,151 @@ DUE_TIME: NONE`
                 assigneeName: null, 
                 dueDate: null, 
                 dueTime: null 
+            };
+        }
+    }
+
+    async aiExtractEventDetails(allSegmentsText) {
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a RingCentral calendar event parser. Extract event details from voice commands.
+
+The user said something like "add event [event name] on [date] at [time] for [duration]"
+
+Your job:
+1. Extract the event name/title (REQUIRED)
+2. Extract the start date (format: YYYY-MM-DD, or RELATIVE like "tomorrow", "next monday")
+3. Extract the start time (format: HH:MM in 24-hour format)
+4. Extract the duration in minutes (default: 60 if not specified)
+5. Extract any notes/description (optional)
+
+Important:
+- Event name is REQUIRED and should be clear and concise
+- Start date can be relative ("tomorrow", "next week") or specific ("March 15")
+- Start time should be in 24-hour format (e.g., "14:30" for 2:30 PM)
+- Duration should be in minutes (e.g., 30, 60, 90)
+- If date/time/duration not mentioned, use NONE for date/time and 60 for duration
+
+Respond in this EXACT format:
+NAME: <event name>
+START_DATE: <YYYY-MM-DD or RELATIVE or NONE>
+START_TIME: <HH:MM or NONE>
+DURATION: <minutes as number or 60>
+NOTES: <any additional notes or NONE>
+
+Examples:
+
+Input: "team meeting tomorrow at 2pm"
+Output:
+NAME: Team meeting
+START_DATE: RELATIVE:tomorrow
+START_TIME: 14:00
+DURATION: 60
+NOTES: NONE
+
+Input: "client presentation on friday at 10am for 90 minutes about quarterly results"
+Output:
+NAME: Client presentation
+START_DATE: RELATIVE:friday
+START_TIME: 10:00
+DURATION: 90
+NOTES: Quarterly results
+
+Input: "lunch with sarah next monday at noon for 1 hour"
+Output:
+NAME: Lunch with Sarah
+START_DATE: RELATIVE:monday
+START_TIME: 12:00
+DURATION: 60
+NOTES: NONE`
+                    },
+                    {
+                        role: "user",
+                        content: `Voice command after trigger: ${allSegmentsText}\n\nExtract event details:`
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 300
+            });
+
+            const result = response.choices[0].message.content.trim();
+            
+            // Parse response
+            let name = null;
+            let startDate = null;
+            let startTime = null;
+            let duration = 60;
+            let notes = null;
+            
+            for (const line of result.split('\n')) {
+                if (line.startsWith("NAME:")) {
+                    name = line.replace("NAME:", "").trim();
+                } else if (line.startsWith("START_DATE:")) {
+                    startDate = line.replace("START_DATE:", "").trim();
+                } else if (line.startsWith("START_TIME:")) {
+                    startTime = line.replace("START_TIME:", "").trim();
+                } else if (line.startsWith("DURATION:")) {
+                    const durationStr = line.replace("DURATION:", "").trim();
+                    duration = parseInt(durationStr) || 60;
+                } else if (line.startsWith("NOTES:")) {
+                    notes = line.replace("NOTES:", "").trim();
+                }
+            }
+
+            // Handle NONE values
+            if (startDate && startDate.toUpperCase() === "NONE") startDate = null;
+            if (startTime && startTime.toUpperCase() === "NONE") startTime = null;
+            if (notes && notes.toUpperCase() === "NONE") notes = null;
+
+            // Parse relative dates (basic implementation)
+            if (startDate && startDate.startsWith('RELATIVE:')) {
+                const relative = startDate.replace('RELATIVE:', '').toLowerCase();
+                const now = new Date();
+                
+                if (relative === 'today') {
+                    startDate = now.toISOString().split('T')[0];
+                } else if (relative === 'tomorrow') {
+                    now.setDate(now.getDate() + 1);
+                    startDate = now.toISOString().split('T')[0];
+                } else if (relative.includes('monday') || relative.includes('tuesday') || 
+                           relative.includes('wednesday') || relative.includes('thursday') ||
+                           relative.includes('friday') || relative.includes('saturday') || 
+                           relative.includes('sunday')) {
+                    // Simple day-of-week logic (find next occurrence)
+                    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                    const targetDay = days.findIndex(day => relative.includes(day));
+                    if (targetDay !== -1) {
+                        const currentDay = now.getDay();
+                        let daysToAdd = targetDay - currentDay;
+                        if (daysToAdd <= 0) daysToAdd += 7;
+                        now.setDate(now.getDate() + daysToAdd);
+                        startDate = now.toISOString().split('T')[0];
+                    }
+                }
+            }
+
+            console.log(`✅ Extracted Event - Name: "${name}", Date: ${startDate || 'None'}, Time: ${startTime || 'None'}, Duration: ${duration}min`);
+            
+            return { 
+                name, 
+                startDate, 
+                startTime, 
+                duration,
+                notes 
+            };
+            
+        } catch (error) {
+            console.error(`⚠️  AI event extraction failed: ${error}`);
+            return { 
+                name: allSegmentsText, 
+                startDate: null, 
+                startTime: null, 
+                duration: 60,
+                notes: null 
             };
         }
     }

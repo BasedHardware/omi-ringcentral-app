@@ -1,12 +1,13 @@
-# 💬 RingCentral Voice Messenger & Task Manager for OMI
+# 💬 RingCentral Voice Integration for OMI
 
-Voice-activated RingCentral messaging and task creation through your OMI device. Simply say "Send ring message to [chat]" or "Create ring task for [person]" and AI will automatically handle the rest!
+Voice-activated RingCentral messaging, task creation, and calendar events through your OMI device. Simply say "Send ring message to [chat]", "Create ring task for [person]", or "Add ring event [event name]" and AI will automatically handle the rest!
 
 ## ✨ Features
 
-- **🎤 Voice-Activated** - Say "Send ring message" or "Create ring task" and speak naturally
+- **🎤 Voice-Activated** - Say "Send ring message", "Create ring task", or "Add ring event" and speak naturally
 - **🧠 AI-Powered Chat Matching** - AI intelligently matches spoken names to your workspace chats
 - **📋 Task Creation** - Create and assign tasks with voice commands, including due dates and times
+- **📅 Calendar Events** - Schedule events with natural language date/time parsing
 - **📲 Mobile Notifications** - Instant push notifications to your OMI app when actions complete
 - **🔐 OAuth Authentication** - Secure RingCentral OAuth 2.0 integration
 - **💬 Direct Messages** - Works with DMs, channels, and group chats
@@ -14,6 +15,7 @@ Voice-activated RingCentral messaging and task creation through your OMI device.
 - **🤖 Smart Message Extraction** - AI cleans up filler words and formats professionally
 - **🔕 Silent Collection** - Only notifies when message is sent
 - **📱 Mobile-First UI** - Beautiful responsive RingCentral-themed design
+- **🌍 Timezone Support** - Set your timezone for accurate event and task scheduling
 
 ## 🚀 Quick Start
 
@@ -21,11 +23,13 @@ Voice-activated RingCentral messaging and task creation through your OMI device.
 
 1. **Install the app** in your OMI mobile app
 2. **Authenticate** your RingCentral workspace (one-time)
-3. **Start messaging and creating tasks!**
+3. **Start messaging, creating tasks, and scheduling events!**
    - Say: "Send ring message to general saying hello team!"
    - Say: "Post ringcentral message to marketing that the campaign is live"
    - Say: "Create ring task for Lopez due tomorrow at 3pm review the marketing proposal"
    - Say: "Add ring task finish the budget report by Friday"
+   - Say: "Add ring event team meeting tomorrow at 2pm"
+   - Say: "Schedule ring event client presentation on Friday at 10am for 90 minutes"
 
 ### Trigger Phrases
 
@@ -40,6 +44,12 @@ Voice-activated RingCentral messaging and task creation through your OMI device.
 - **"Create ringcentral task"** - "Create ringcentral task review the proposal..."
 - **"Add ring task"** - "Add ring task for Sarah finish the report by Friday..."
 - **"Make ring task"** - "Make ring task update the website..."
+
+**For Calendar Events:**
+- **"Add ring event"** - "Add ring event team meeting tomorrow at 2pm..."
+- **"Create ring event"** - "Create ring event client presentation on Friday..."
+- **"Schedule ring event"** - "Schedule ring event lunch with Sarah next Monday at noon..."
+- **"Add ringcentral event"** - "Add ringcentral event quarterly review..."
 
 ### How It Works
 
@@ -143,9 +153,15 @@ OMI_APP_SECRET=your_omi_app_secret_here
 4. Navigate to **OAuth Settings**
 5. Add scopes:
    - `Team Messaging` - Read and write access
-   - `Glip` - For team messaging
+   - `Glip` - For team messaging, tasks, and calendar events
 6. Set redirect URL: `http://localhost:3000/oauth/callback`
 7. Copy Client ID and Client Secret to `.env`
+
+**Required Permissions:**
+- ✅ **Team Messaging** - Send messages to chats
+- ✅ **Glip** - Create and manage tasks and calendar events
+
+**Note:** Calendar events are created through the Glip API as event attachments, so no separate Calendar scope is needed!
 
 ### Run Locally
 
@@ -294,6 +310,42 @@ The AI will:
 3. **Extract time** - Converts "3pm", "2:30", "15:00" to proper time format
 4. **Clean title** - Removes filler words and creates clear, concise task titles
 
+## 📅 Calendar Event Creation
+
+Create calendar events in RingCentral with natural voice commands! The AI will extract:
+- **Event name** (required)
+- **Start date** (optional - supports relative dates like "tomorrow", "Friday")
+- **Start time** (optional - specify time for event start)
+- **Duration** (optional - defaults to 60 minutes)
+- **Notes/Description** (optional - additional event details)
+
+### Event Examples
+
+**Simple event (date and time):**
+- "Add ring event team meeting tomorrow at 2pm"
+- Result: Event created for tomorrow at 2:00 PM (60 min duration)
+
+**Event with duration:**
+- "Schedule ring event client presentation on Friday at 10am for 90 minutes"
+- Result: Event on Friday from 10:00 AM to 11:30 AM
+
+**Event with notes:**
+- "Create ring event quarterly review next Monday at 3pm about Q4 results"
+- Result: Event with description "Q4 results"
+
+**Event with all details:**
+- "Add ring event lunch with Sarah next Monday at noon for 1 hour to discuss project updates"
+- Result: Event on next Monday, 12:00 PM - 1:00 PM, with notes about project discussion
+
+### How Event Parsing Works
+
+The AI will:
+1. **Parse dates** - Understands "today", "tomorrow", "Friday", "next Monday", etc.
+2. **Extract time** - Converts "2pm", "10am", "14:30" to proper time format
+3. **Calculate duration** - Parses "90 minutes", "1 hour", "30 min"
+4. **Extract notes** - Captures additional context as event description
+5. **Timezone aware** - Uses your configured timezone for accurate scheduling
+
 ## 📱 Chat Management
 
 ### Direct Messages
@@ -353,6 +405,12 @@ You can also manually refresh:
 - Verify all environment variables are set
 - Check build logs for specific errors
 - Ensure `REDIRECT_URI` matches RingCentral app
+
+### "Event/Task creation fails"
+- Verify `Team Messaging` and `Glip` scopes are enabled in RingCentral app
+- Check if you have permission to create events/tasks in your workspace
+- Events are created as Glip event attachments in your personal chat
+- Check Railway logs for specific API error messages
 
 ## 📁 Project Structure
 
@@ -422,7 +480,10 @@ Built for the [OMI](https://omi.me) ecosystem.
 
 **Features:**
 - 🎤 Voice-activated RingCentral messaging
-- 🧠 AI-powered chat matching
+- 📋 Voice-activated task creation
+- 📅 Voice-activated calendar events
+- 🧠 AI-powered chat matching & date/time parsing
 - 📱 Mobile-first workspace management
 - 🔐 Secure RingCentral OAuth integration
 - ⚡ Real-time processing with Railway deployment
+- 🌍 Timezone-aware scheduling
