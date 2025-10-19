@@ -457,42 +457,20 @@ async function createRingCentralEvent(platform, eventName, startDate, startTime,
     console.log(`✓ Creating calendar event: ${eventName}`);
     console.log(`✓ Start: ${startDateTime} (${duration} minutes)`);
     
-    // Get or create personal chat for the event
-    const chatsResponse = await platform.get('/team-messaging/v1/chats?type=Personal');
-    const chatsData = await chatsResponse.json();
-    let personalChats = chatsData.records || [];
-    
-    let groupId = null;
-    if (personalChats.length > 0) {
-        groupId = personalChats[0].id;
-        console.log(`✓ Using personal chat ${groupId} for event`);
-    } else {
-        // Create personal chat
-        const createChatResponse = await platform.post('/team-messaging/v1/chats', {
-            type: 'Personal'
-        });
-        const newChat = await createChatResponse.json();
-        groupId = newChat.id;
-        console.log(`✓ Created personal chat ${groupId}`);
-    }
-    
-    // Build event attachment
-    const eventAttachment = {
-        type: 'Event',
-        title: eventName,
+    // Build event body for Calendar Events API
+    const eventBody = {
+        name: eventName,
         startTime: startDateTime,
         endTime: endDateTime,
-        color: 'Blue'
+        allDay: false
     };
     
     if (notes) {
-        eventAttachment.description = notes;
+        eventBody.description = notes;
     }
     
-    // Create calendar event using Glip API (event as attachment to group)
-    const response = await platform.post(`/restapi/v1.0/glip/groups/${groupId}/posts`, {
-        attachments: [eventAttachment]
-    });
+    // Create calendar event using proper Calendar Events API
+    const response = await platform.post('/restapi/v1.0/glip/events', eventBody);
     
     return await response.json();
 }
