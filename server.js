@@ -512,47 +512,24 @@ async function createRingCentralTask(platform, title, assigneeId, assigneeName, 
         const chatsData = await chatsResponse.json();
         const chats = chatsData.records || [];
         
-        // Get current user's ID to exclude from matching
-        let currentUserId = null;
-        try {
-            const authData = await platform.auth().data();
-            currentUserId = authData.owner_id ? authData.owner_id.toString() : null;
-        } catch (err) {
-            console.log(`⚠️  Could not get current user ID: ${err.message}`);
-        }
-        
-        // Find DM with this specific person (not current user)
-        // Convert IDs to strings for comparison
-        const assigneeIdStr = assigneeId.toString();
-        
+        // Find DM with this person
         for (const chat of chats) {
-            if (chat.members && chat.members.length > 0) {
-                // For Direct chats, find the member that is NOT the current user
-                const otherMembers = chat.members.filter(m => {
-                    const memberId = m.id.toString();
-                    return currentUserId ? memberId !== currentUserId : true;
-                });
-                
-                // Check if the assignee is in the other members
-                const hasAssignee = otherMembers.some(m => m.id.toString() === assigneeIdStr);
-                
-                if (hasAssignee) {
-                    taskChatId = chat.id;
-                    console.log(`✓ Found existing DM chat ${taskChatId} with ${assigneeName} (ID: ${assigneeIdStr})`);
-                    break;
-                }
+            if (chat.members && chat.members.some(m => m.id === assigneeId)) {
+                taskChatId = chat.id;
+                console.log(`✓ Found existing DM chat ${taskChatId} with ${assigneeName}`);
+                break;
             }
         }
         
-        // If no DM exists, create one using Glip API
+        // If no DM exists, create one
         if (!taskChatId) {
-            const createChatResponse = await platform.post('/restapi/v1.0/glip/chats', {
+            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
                 type: 'Direct',
                 members: [{ id: assigneeId }]
             });
             const newChat = await createChatResponse.json();
             taskChatId = newChat.id;
-            console.log(`✓ Created new DM chat ${taskChatId} with ${assigneeName} (ID: ${assigneeIdStr})`);
+            console.log(`✓ Created new DM chat ${taskChatId} with ${assigneeName}`);
         }
     } else {
         // No assignee - use personal chat (create if needed)
@@ -564,8 +541,8 @@ async function createRingCentralTask(platform, title, assigneeId, assigneeName, 
             taskChatId = personalChats[0].id;
             console.log(`✓ Using personal chat ${taskChatId} for unassigned task`);
         } else {
-            // Create personal chat using Glip API
-            const createChatResponse = await platform.post('/restapi/v1.0/glip/chats', {
+            // Create personal chat
+            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
                 type: 'Personal'
             });
             const newChat = await createChatResponse.json();
