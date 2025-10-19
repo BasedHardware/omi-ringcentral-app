@@ -534,6 +534,11 @@ Content-Type: application/json
 - User must be authenticated with RingCentral first
 - Returns 401 if user not authenticated
 
+**CORS:**
+- ✅ CORS is enabled for all origins
+- Can be called from web browsers, mobile apps, and server-side code
+- Supports preflight OPTIONS requests
+
 ## 🤝 Contributing
 
 1. Fork the repository

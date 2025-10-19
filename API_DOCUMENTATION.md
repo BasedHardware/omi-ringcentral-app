@@ -22,6 +22,8 @@ This API allows external applications to create tasks and send messages to RingC
 
 **Authentication:** All endpoints require a valid `uid` (user ID) parameter.
 
+**CORS:** ✅ Enabled - All origins are allowed, making it easy to call from web applications, mobile apps, and server-side code.
+
 ---
 
 ## Authentication
@@ -301,9 +303,96 @@ RingCentral supports markdown formatting:
 
 ## Examples
 
+### JavaScript (Browser)
+
+#### Create Task with Fetch API
+
+```javascript
+async function createTask(uid, taskData) {
+  try {
+    const response = await fetch(
+      `https://omi-ringcentral.up.railway.app/api/create-task?uid=${uid}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: taskData.title,
+          assigneeName: taskData.assignee,
+          dueDate: taskData.dueDate,
+          dueTime: taskData.dueTime
+        })
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to create task');
+    }
+    
+    console.log('Task created:', data);
+    return data;
+  } catch (error) {
+    console.error('Error creating task:', error);
+    throw error;
+  }
+}
+
+// Usage
+createTask('GPW9BKkHYWMkGTv3iSndMRAPS2B2', {
+  title: 'Review quarterly report',
+  assignee: 'Sarah Lopez',
+  dueDate: '2025-10-25',
+  dueTime: '15:00'
+});
+```
+
+#### Send Message with Fetch API
+
+```javascript
+async function sendChatMessage(uid, chatName, message) {
+  try {
+    const response = await fetch(
+      `https://omi-ringcentral.up.railway.app/api/send-chat-message?uid=${uid}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          chatName: chatName,
+          message: message
+        })
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to send message');
+    }
+    
+    console.log('Message sent:', data);
+    return data;
+  } catch (error) {
+    console.error('Error sending message:', error);
+    throw error;
+  }
+}
+
+// Usage
+sendChatMessage(
+  'GPW9BKkHYWMkGTv3iSndMRAPS2B2',
+  'General',
+  '## Meeting Summary\n\n- Q4 goals discussed\n- Action items assigned'
+);
+```
+
 ### JavaScript / Node.js
 
-#### Create Task
+#### Create Task with Axios
 
 ```javascript
 const axios = require('axios');
