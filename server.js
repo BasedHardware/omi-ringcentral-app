@@ -458,19 +458,21 @@ async function createRingCentralEvent(platform, eventName, startDate, startTime,
     console.log(`✓ Start: ${startDateTime} (${duration} minutes)`);
     
     // Build event body for Calendar Events API
+    // Reference: https://developers.ringcentral.com/api-reference/Calendar-Events/createEventNew
     const eventBody = {
-        name: eventName,
+        title: eventName,
         startTime: startDateTime,
         endTime: endDateTime,
-        allDay: false
+        allDay: false,
+        color: 'Blue'
     };
     
     if (notes) {
         eventBody.description = notes;
     }
     
-    // Create calendar event using proper Calendar Events API
-    const response = await platform.post('/restapi/v1.0/glip/events', eventBody);
+    // Create calendar event using Team Messaging Calendar Events API
+    const response = await platform.post('/team-messaging/v1/events', eventBody);
     
     return await response.json();
 }

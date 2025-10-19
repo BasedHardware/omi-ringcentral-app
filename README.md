@@ -152,16 +152,16 @@ OMI_APP_SECRET=your_omi_app_secret_here
 3. Enter app name and select platform
 4. Navigate to **OAuth Settings**
 5. Add scopes:
-   - `Team Messaging` - Read and write access
-   - `Glip` - For team messaging, tasks, and calendar events
+   - `Team Messaging` - Read and write access (includes calendar events)
+   - `Glip` - For tasks
 6. Set redirect URL: `http://localhost:3000/oauth/callback`
 7. Copy Client ID and Client Secret to `.env`
 
 **Required Permissions:**
-- ✅ **Team Messaging** - Send messages to chats
-- ✅ **Glip** - Create and manage tasks and calendar events
+- ✅ **Team Messaging** - Send messages to chats AND create calendar events
+- ✅ **Glip** - Create and manage tasks
 
-**Note:** Calendar events are created through the Glip API as event attachments, so no separate Calendar scope is needed!
+**Note:** Calendar events use the Team Messaging scope - no separate calendar permission needed!
 
 ### Run Locally
 
@@ -409,8 +409,8 @@ You can also manually refresh:
 ### "Event/Task creation fails"
 - Verify `Team Messaging` and `Glip` scopes are enabled in RingCentral app
 - Check if you have permission to create events/tasks in your workspace
-- Events are created as Glip event attachments in your personal chat
-- Check Railway logs for specific API error messages
+- Events use the `/team-messaging/v1/events` endpoint (no separate calendar scope needed)
+- Check Railway logs for specific API error messages (look for 400/403 errors)
 
 ## 📁 Project Structure
 
