@@ -544,9 +544,9 @@ async function createRingCentralTask(platform, title, assigneeId, assigneeName, 
             }
         }
         
-        // If no DM exists, create one
+        // If no DM exists, create one using Glip API
         if (!taskChatId) {
-            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
+            const createChatResponse = await platform.post('/restapi/v1.0/glip/chats', {
                 type: 'Direct',
                 members: [{ id: assigneeId }]
             });
@@ -564,8 +564,8 @@ async function createRingCentralTask(platform, title, assigneeId, assigneeName, 
             taskChatId = personalChats[0].id;
             console.log(`✓ Using personal chat ${taskChatId} for unassigned task`);
         } else {
-            // Create personal chat
-            const createChatResponse = await platform.post('/team-messaging/v1/chats', {
+            // Create personal chat using Glip API
+            const createChatResponse = await platform.post('/restapi/v1.0/glip/chats', {
                 type: 'Personal'
             });
             const newChat = await createChatResponse.json();
